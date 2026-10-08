@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Choose a password · Client Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="portal.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="icon" href="../favicon-32.png" sizes="32x32"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body>
+<header class="site-head portal-head"><div class="wrap head-row">
+<a class="brand" href="../index.html"><img class="brand-mark" src="../logo.svg" alt="" width="40" height="40"><span class="brand-text"><span class="brand-name">Dr Mohamed Ali Nabli</span><span class="brand-role">Client Space</span></span></a>
+<nav aria-label="Main"><a href="../index.html">Website</a><a href="../coaching.html">Coaching</a><a href="../contact.html">Contact</a></nav>
+</div></header>
+<main>
+<section><div class="wrap narrow">
+<p class="eyebrow">Client Space</p>
+<h1>Choose your password</h1>
+<p class="lede">Use at least 8 characters. You will use it with your email to log in.</p>
+<div class="auth-card">
+<form id="reset" class="form" hidden>
+<label for="pw1">New password</label><input id="pw1" type="password" minlength="8" autocomplete="new-password" required>
+<label for="pw2">Repeat it</label><input id="pw2" type="password" minlength="8" autocomplete="new-password" required>
+<button class="btn btn-solid" type="submit">Save password</button>
+</form>
+<p id="status" class="form-status" role="status">Checking your link…</p>
+<div class="auth-links"><a href="forgot.html">Ask for a new link</a></div>
+</div>
+</div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script src="portal.js"></script>
+<script>
+(function(){
+  var P=Portal; if(!P.ready){P.notConfigured();return;}
+  var form=P.$('#reset'), shown=false;
+  function showForm(){ if(shown) return; shown=true; form.hidden=false; P.say('#status',''); }
+  // The email link signs the person in; supabase-js reads the token from the address.
+  P.sb.auth.onAuthStateChange(function(ev,session){ if(session) showForm(); });
+  P.sb.auth.getSession().then(function(r){ if(r.data.session) showForm(); });
+  setTimeout(function(){ if(!shown) P.say('#status','This link is not valid or has expired. Ask for a new one below.',true); }, 4000);
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    if(P.$('#pw1').value!==P.$('#pw2').value){ P.say('#status','The two passwords are different.',true); return; }
+    P.say('#status','Saving…');
+    var r=await P.sb.auth.updateUser({password:P.$('#pw1').value});
+    if(r.error){ P.say('#status',r.error.message,true); return; }
+    P.say('#status','Password saved. Opening your space…');
+    setTimeout(function(){ location.replace('index.html'); },800);
+  });
+})();
+</script>
+</body>
+</html>

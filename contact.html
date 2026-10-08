@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contact · Dr Mohamed Ali Nabli</title>
+<meta name="description" content="Dr Mohamed Ali Nabli, sport scientist and strength &amp; conditioning coach in Doha, Qatar.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="icon" href="favicon-32.png" sizes="32x32"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+<body>
+<header class="site-head"><div class="wrap head-row">
+<a class="brand" href="index.html"><img class="brand-mark" src="logo.svg" alt="" width="40" height="40"><span class="brand-text"><span class="brand-name">Dr Mohamed Ali Nabli</span><span class="brand-role">Sport Science &amp; Conditioning</span></span></a>
+<nav aria-label="Main"><a href="index.html">Home</a><a href="coaching.html">Coaching</a><a href="research.html">Research</a><a href="about.html">About</a><a href="contact.html" aria-current="page">Contact</a><a href="client/index.html">Client Space</a></nav></div></header>
+<main>
+
+<section class="page-head"><div class="wrap">
+<p class="eyebrow">Contact</p>
+<h1>Let's work together</h1>
+<p class="lede">Whether you are an athlete, a club, a researcher or an event organiser, send me a message. I answer every one personally.</p>
+</div></section>
+
+<section><div class="wrap contact-row">
+<form id="contact-form" name="contact" method="POST" class="form">
+<input type="hidden" name="form-name" value="contact">
+<p class="hp"><label for="bot-field">Leave this empty</label><input id="bot-field" name="bot-field"></p>
+<label for="f-name">Name</label><input id="f-name" name="name" required autocomplete="name">
+<label for="f-email">Email</label><input id="f-email" name="email" type="email" required autocomplete="email">
+<label for="f-phone">Phone <span class="muted">(optional)</span></label><input id="f-phone" name="phone" type="tel" autocomplete="tel">
+<label for="f-topic">What is it about?</label>
+<select id="f-topic" name="topic">
+<option>One-to-one coaching</option><option>Online coaching</option><option>Club or team</option><option>Research collaboration</option><option>Speaking or teaching</option><option>Other</option>
+</select>
+<label for="f-msg">Message</label><textarea id="f-msg" name="message" rows="6" required></textarea>
+<button class="btn btn-solid" type="submit">Send message</button>
+<p id="form-status" class="form-status" role="status"></p>
+</form>
+<aside class="details">
+<h2 class="section-title">Direct contact</h2>
+<dl>
+<dt>Email</dt><dd><a href="mailto:nablimedali@live.fr">nablimedali@live.fr</a></dd>
+<dt>WhatsApp</dt><dd><a href="https://wa.me/97466521377" target="_blank" rel="noopener">+974 6652 1377</a></dd>
+<dt>Based in</dt><dd>Doha, Qatar<br>Online coaching worldwide</dd>
+<dt>Profiles</dt><dd><a href="https://www.linkedin.com/in/mohamed-ali-nabli-3b763669" target="_blank" rel="noopener">LinkedIn</a><br><a href="https://www.researchgate.net/profile/Mohamed-Ali-Nabli" target="_blank" rel="noopener">ResearchGate</a></dd>
+</dl>
+</aside>
+</div></section>
+<script src="config.js"></script>
+<script>
+(function(){
+  var f=document.getElementById('contact-form'), s=document.getElementById('form-status');
+  var cfg=window.SITE_CONFIG||{};
+  // Each message is saved in Supabase (table contact_messages; visitors can insert, nobody can read publicly).
+  function toSupabase(d){
+    if(!cfg.supabaseUrl||!cfg.supabaseAnonKey) return Promise.resolve(false);
+    return fetch(cfg.supabaseUrl.replace(/\/$/,'')+'/rest/v1/contact_messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':cfg.supabaseAnonKey,'Authorization':'Bearer '+cfg.supabaseAnonKey,'Prefer':'return=minimal'},
+      body:JSON.stringify({name:d.get('name'),email:d.get('email'),phone:d.get('phone')||null,topic:d.get('topic')||null,message:d.get('message')})
+    }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+  }
+  f.addEventListener('submit', function(e){
+    e.preventDefault();
+    var d=new FormData(f);
+    if(d.get('bot-field')) return;
+    s.textContent='Sending…';
+    toSupabase(d).then(function(ok){
+      if(ok){ f.reset(); s.textContent='Thank you, your message was sent. I will reply soon.'; }
+      else s.textContent='The message could not be sent from here. Please email nablimedali@live.fr or write on WhatsApp +974 6652 1377.';
+    });
+  });
+})();
+</script>
+
+</main>
+<footer class="site-foot"><div class="wrap foot-row">
+<div><p class="foot-name">Dr Mohamed Ali Nabli</p><p class="muted">Sport scientist and strength &amp; conditioning coach · Doha, Qatar</p></div>
+<ul class="foot-links">
+<li><a href="mailto:nablimedali@live.fr">nablimedali@live.fr</a></li>
+<li><a href="https://wa.me/97466521377" target="_blank" rel="noopener">WhatsApp +974 6652 1377</a></li>
+<li><a href="https://www.linkedin.com/in/mohamed-ali-nabli-3b763669" target="_blank" rel="noopener">LinkedIn</a></li>
+<li><a href="https://www.researchgate.net/profile/Mohamed-Ali-Nabli" target="_blank" rel="noopener">ResearchGate</a></li>
+</ul></div>
+<div class="wrap"><p class="copy">© 2026 Mohamed Ali Nabli</p></div></footer>
+</body>
+</html>

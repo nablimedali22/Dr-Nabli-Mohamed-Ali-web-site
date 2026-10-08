@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Log in · Client Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="portal.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="icon" href="../favicon-32.png" sizes="32x32"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body>
+<header class="site-head portal-head"><div class="wrap head-row">
+<a class="brand" href="../index.html"><img class="brand-mark" src="../logo.svg" alt="" width="40" height="40"><span class="brand-text"><span class="brand-name">Dr Mohamed Ali Nabli</span><span class="brand-role">Client Space</span></span></a>
+<nav aria-label="Main"><a href="../index.html">Website</a><a href="../coaching.html">Coaching</a><a href="../contact.html">Contact</a></nav>
+</div></header>
+<main>
+<section><div class="wrap narrow">
+<p class="eyebrow">Coaching · Client Space</p>
+<h1>Log in</h1>
+<p class="lede">Your training programme, tests, progress and messages with your coach, in one private place.</p>
+<div class="auth-card">
+<form id="login" class="form">
+<label for="email">Email</label><input id="email" type="email" autocomplete="email" required>
+<label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+<button class="btn btn-solid" type="submit">Log in</button>
+<p id="status" class="form-status" role="status"></p>
+</form>
+<div class="auth-links"><a href="forgot.html">Forgot your password?</a><a href="../contact.html">No account yet? Contact me</a></div>
+</div>
+<p class="muted" style="margin-top:1.5rem">Accounts are created by your coach. There is no public sign-up.</p>
+</div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script src="portal.js"></script>
+<script>
+(async function(){
+  var P=Portal; if(!P.ready){P.notConfigured();return;}
+  if(/inactive=1/.test(location.search)) P.say('#status','Your account is paused. Please contact your coach.',true);
+  async function go(){
+    var s=(await P.sb.auth.getSession()).data.session; if(!s) return false;
+    var r=await P.sb.from('profiles').select('role').eq('id',s.user.id).single();
+    location.replace(r.data&&r.data.role==='coach'?'coach.html':'dashboard.html'); return true;
+  }
+  if(await go()) return;
+  P.$('#login').addEventListener('submit', async function(e){
+    e.preventDefault(); P.say('#status','Logging in…');
+    var r=await P.sb.auth.signInWithPassword({email:P.$('#email').value.trim(), password:P.$('#password').value});
+    if(r.error){ P.say('#status','Email or password is not correct.',true); return; }
+    go();
+  });
+})();
+</script>
+</body>
+</html>

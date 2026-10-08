@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>My space · Client Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="portal.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="icon" href="../favicon-32.png" sizes="32x32"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body>
+<header class="site-head portal-head"><div class="wrap head-row">
+<a class="brand" href="../index.html"><img class="brand-mark" src="../logo.svg" alt="" width="40" height="40"><span class="brand-text"><span class="brand-name">Dr Mohamed Ali Nabli</span><span class="brand-role">Client Space</span></span></a>
+<div class="portal-user"><span id="who"></span><button id="logout" class="btn btn-line btn-small" type="button">Log out</button></div>
+</div></header>
+<main>
+<section><div class="wrap">
+<p class="eyebrow">Client Space</p>
+<h1 id="hello">Welcome</h1>
+<div class="tabs" role="tablist" aria-label="Sections" style="margin-top:1.5rem"><button type="button" role="tab" data-tab="overview">Overview</button><button type="button" role="tab" data-tab="wellness">Wellness</button><button type="button" role="tab" data-tab="load">Training Load</button><button type="button" role="tab" data-tab="profile">My Profile</button><button type="button" role="tab" data-tab="plan">My Coaching Plan</button><button type="button" role="tab" data-tab="program">Training Programme</button><button type="button" role="tab" data-tab="performance">Performance</button><button type="button" role="tab" data-tab="progress">Progress</button><button type="button" role="tab" data-tab="notes">Coach Notes</button><button type="button" role="tab" data-tab="calendar">Calendar</button><button type="button" role="tab" data-tab="documents">Documents</button><button type="button" role="tab" data-tab="messages">Messages</button></div>
+<div class="panel" id="tab-overview" role="tabpanel" hidden></div>
+<div class="panel" id="tab-wellness" role="tabpanel" hidden></div>
+<div class="panel" id="tab-load" role="tabpanel" hidden></div>
+<div class="panel" id="tab-profile" role="tabpanel" hidden></div>
+<div class="panel" id="tab-plan" role="tabpanel" hidden></div>
+<div class="panel" id="tab-program" role="tabpanel" hidden></div>
+<div class="panel" id="tab-performance" role="tabpanel" hidden></div>
+<div class="panel" id="tab-progress" role="tabpanel" hidden></div>
+<div class="panel" id="tab-notes" role="tabpanel" hidden></div>
+<div class="panel" id="tab-calendar" role="tabpanel" hidden></div>
+<div class="panel" id="tab-documents" role="tabpanel" hidden></div>
+<div class="panel" id="tab-messages" role="tabpanel" hidden></div>
+</div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script src="portal.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

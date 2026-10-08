@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Forgot password · Client Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="portal.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="icon" href="../favicon-32.png" sizes="32x32"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body>
+<header class="site-head portal-head"><div class="wrap head-row">
+<a class="brand" href="../index.html"><img class="brand-mark" src="../logo.svg" alt="" width="40" height="40"><span class="brand-text"><span class="brand-name">Dr Mohamed Ali Nabli</span><span class="brand-role">Client Space</span></span></a>
+<nav aria-label="Main"><a href="../index.html">Website</a><a href="../coaching.html">Coaching</a><a href="../contact.html">Contact</a></nav>
+</div></header>
+<main>
+<section><div class="wrap narrow">
+<p class="eyebrow">Client Space</p>
+<h1>Forgot your password?</h1>
+<p class="lede">Enter your email. If it belongs to a client account, you will receive a link to choose a new password.</p>
+<div class="auth-card">
+<form id="forgot" class="form">
+<label for="email">Email</label><input id="email" type="email" autocomplete="email" required>
+<button class="btn btn-solid" type="submit">Send the link</button>
+<p id="status" class="form-status" role="status"></p>
+</form>
+<div class="auth-links"><a href="index.html">Back to log in</a></div>
+</div>
+</div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script src="portal.js"></script>
+<script>
+(function(){
+  var P=Portal; if(!P.ready){P.notConfigured();return;}
+  P.$('#forgot').addEventListener('submit', async function(e){
+    e.preventDefault(); P.say('#status','Sending…');
+    var url=location.href.replace(/forgot\.html.*$/,'reset.html');
+    var r=await P.sb.auth.resetPasswordForEmail(P.$('#email').value.trim(),{redirectTo:url});
+    // Same answer whether or not the email exists, so accounts cannot be guessed.
+    P.say('#status', r.error && r.error.status===429 ? 'Too many attempts. Please wait a few minutes and try again.' : 'If this email has an account, a link is on its way. Check your inbox and spam folder.', r.error&&r.error.status===429);
+  });
+})();
+</script>
+</body>
+</html>

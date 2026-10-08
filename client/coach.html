@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Coach area · Client Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="portal.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="icon" href="../favicon-32.png" sizes="32x32"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body>
+<header class="site-head portal-head"><div class="wrap head-row">
+<a class="brand" href="../index.html"><img class="brand-mark" src="../logo.svg" alt="" width="40" height="40"><span class="brand-text"><span class="brand-name">Dr Mohamed Ali Nabli</span><span class="brand-role">Client Space</span></span></a>
+<div class="portal-user"><span id="who"></span><button id="logout" class="btn btn-line btn-small" type="button">Log out</button></div>
+</div></header>
+<main>
+<section><div class="wrap">
+<p class="eyebrow">Coach area</p>
+<h1>Clients</h1>
+<div class="coach-layout" style="margin-top:1.5rem">
+<aside>
+<button id="go-team" type="button" class="btn btn-solid btn-small" style="width:100%;margin-bottom:1rem">Team dashboard</button>
+<ul id="clients" class="client-list"></ul>
+<details style="margin-top:1.25rem"><summary class="muted">How to add a client</summary>
+<p class="muted" style="margin-top:.5rem;font-size:.92rem">In Supabase: Authentication › Users › Add user. Use “Send invitation” (the client chooses a password) or “Create new user” with “Auto confirm”. The client then appears here.</p></details>
+</aside>
+<div>
+<h2 id="client-name" class="section-title">Choose a client</h2>
+<div id="team-area" hidden></div>
+<div id="client-area" hidden>
+<div class="tabs" role="tablist" aria-label="Client sections"><button type="button" role="tab" data-tab="profile">Profile</button><button type="button" role="tab" data-tab="plan">Plan</button><button type="button" role="tab" data-tab="sessions">Sessions</button><button type="button" role="tab" data-tab="wellness">Wellness</button><button type="button" role="tab" data-tab="load">Training load</button><button type="button" role="tab" data-tab="tests">Tests & measures</button><button type="button" role="tab" data-tab="notes">Notes</button><button type="button" role="tab" data-tab="documents">Documents</button><button type="button" role="tab" data-tab="messages">Messages</button></div>
+<div class="panel" id="tab-profile" role="tabpanel" hidden></div>
+<div class="panel" id="tab-plan" role="tabpanel" hidden></div>
+<div class="panel" id="tab-sessions" role="tabpanel" hidden></div>
+<div class="panel" id="tab-wellness" role="tabpanel" hidden></div>
+<div class="panel" id="tab-load" role="tabpanel" hidden></div>
+<div class="panel" id="tab-tests" role="tabpanel" hidden></div>
+<div class="panel" id="tab-notes" role="tabpanel" hidden></div>
+<div class="panel" id="tab-documents" role="tabpanel" hidden></div>
+<div class="panel" id="tab-messages" role="tabpanel" hidden></div>
+</div>
+</div>
+</div>
+</div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script src="portal.js"></script>
+<script src="coach.js"></script>
+</body>
+</html>
