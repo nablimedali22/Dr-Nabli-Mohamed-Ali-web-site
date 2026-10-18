@@ -41,7 +41,8 @@
       (s.pdf_path ? '<p style="margin-top:.75rem"><a href="#" data-file="' + esc(s.pdf_path) + '">Download the programme (PDF)</a></p>' : '') +
       '<form class="inline-form report" data-id="' + s.id + '" style="margin:1rem 0 0">' +
       '<label class="check"><input type="checkbox" name="completed"' + (s.completed ? ' checked' : '') + '> Session done</label>' +
-      '<label>My RPE (1-10)<input name="rpe" type="number" min="1" max="10" value="' + esc(s.client_rpe) + '"></label>' +
+      '<label>My RPE (0-10)<input name="rpe" type="number" min="0" max="10" value="' + esc(s.client_rpe) + '"></label>' +
+      P.rpeGuide() +
       '<label class="wide">How did it go?<textarea name="feedback" rows="2">' + esc(s.client_feedback) + '</textarea></label>' +
       '<div><button class="btn btn-line btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form></li>';
   }
@@ -59,6 +60,7 @@
       });
     });
     P.bindFileLinks(root);
+    P.bindRpeGuide(root);
   }
 
   var render = {
@@ -120,7 +122,7 @@
         '<div class="inline-form" style="margin:0"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -7) + '" max="' + t + '"></label>' +
         '<label>Session<select name="type"><option>Training</option><option>Match</option><option>Gym</option><option>Conditioning</option><option>Other</option></select></label>' +
         '<label>Duration (min)<input name="min" type="number" min="1" max="600" required></label></div>' +
-        '<fieldset><legend>Session RPE</legend><div class="scale scale-11">' + rpe + '</div><div class="scale-ends"><span>0 rest</span><span id="rpe-label"></span><span>10 maximal</span></div></fieldset>' +
+        '<fieldset><legend>Session RPE</legend><div class="scale scale-11">' + rpe + '</div><div class="scale-ends"><span>0 rest</span><span id="rpe-label"></span><span>10 maximal</span></div>' + P.rpeGuide() + '</fieldset>' +
         '<label class="muted" for="sn">Notes (optional)</label><input id="sn" name="notes" maxlength="500" class="plain-input">' +
         '<div class="row"><span>Session load: <span class="hooper-total" id="sl">–</span> AU</span>' +
         '<span><button class="btn btn-solid btn-small" type="submit">Save session</button> <span class="status" role="status"></span></span></div></form>' +
@@ -131,7 +133,7 @@
         P.$('#rpe-label').textContent = c ? P.CR10[+c.value] : '';
         P.$('#sl').textContent = c && m ? (+c.value) * m : '–';
       }
-      f.addEventListener('input', calc); f.addEventListener('change', calc);
+      f.addEventListener('input', calc); f.addEventListener('change', calc); P.bindRpeGuide(f);
       f.addEventListener('submit', async function (e) {
         e.preventDefault(); var st = P.$('.status', f);
         var row = { client_id: uid, session_date: f.elements.date.value, session_type: f.elements.type.value, rpe: +f.querySelector('[name=rpe]:checked').value,

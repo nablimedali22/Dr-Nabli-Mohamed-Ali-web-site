@@ -100,7 +100,7 @@ create table if not exists public.training_sessions (
   coach_notes     text,
   pdf_path        text,           -- file in bucket client-files, under <client_id>/
   completed       boolean not null default false,
-  client_rpe      int check (client_rpe is null or client_rpe between 1 and 10),
+  client_rpe      int check (client_rpe is null or client_rpe between 0 and 10),
   client_feedback text,
   created_at      timestamptz not null default now()
 );
