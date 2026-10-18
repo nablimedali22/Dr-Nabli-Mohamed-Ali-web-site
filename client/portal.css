@@ -57,7 +57,7 @@ td.num{font-variant-numeric:tabular-nums}
 .chart text{font-family:var(--mono);font-size:11px;fill:var(--muted)}
 .chart .grid{stroke:var(--line);stroke-width:1}
 .chart .line{fill:none;stroke:var(--accent);stroke-width:2.5}
-.chart circle{fill:var(--accent)}
+.chart circle,.chart .bar{fill:var(--accent)}
 .delta-up{color:#2e7d32}.delta-down{color:#b3261e}
 
 .cal-head{display:flex;align-items:center;gap:1rem;margin-bottom:.75rem}
@@ -168,3 +168,9 @@ td.hi{color:#b3261e;font-weight:600}
 .list > li.supp{display:flex;gap:1rem;align-items:flex-start}
 .supp img{width:4rem;height:4rem;object-fit:cover;border-radius:4px;flex:none;background:var(--bg)}
 .supp > div{flex:1;min-width:0}
+
+/* training load: Sessions / Daily / Weekly / Monthly switch */
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:.25rem}
+.seg button{font:inherit;font-size:.9rem;font-weight:600;background:var(--bg);color:var(--muted);border:0;border-inline-end:1px solid var(--line);padding:.45rem .9rem;cursor:pointer}
+.seg button:last-child{border-inline-end:0}
+.seg button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}

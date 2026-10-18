@@ -187,29 +187,131 @@
     return { daily28: m, acute: acute, chronic: chronic, monotony: monotony, strain: monotony == null ? null : acute * monotony,
       acwr: chronic > 0 && first <= addDays(t, -21) ? acute / chronic : null, today: daily[t] || 0 };
   }
+  // Session types a client can log; 'Programme' marks the coach's programme sessions, 'Training' older logs.
+  var SESSION_TYPES = ['Team training', 'Self-training', 'Match', 'Gym', 'Conditioning', 'Recovery', 'Other'];
+  function sessionLabel(e) { return e.title ? e.session_type + ' · ' + e.title : e.session_type; }
+  function weekStart(iso) { var d = new Date(iso + 'T00:00:00'); return addDays(iso, -((d.getDay() + 6) % 7)); }
+  function pct(v, prev) {
+    if (!prev) return '—';
+    var c = Math.round((v - prev) / prev * 100);
+    return '<span class="' + (c > 30 ? 'delta-down' : '') + '">' + (c > 0 ? '+' : '') + c + '%</span>';
+  }
+  // Sums a list of sessions: load, count, minutes, distinct days and mean session RPE.
+  function sumUp(list) {
+    var days = {}, o = { load: 0, n: list.length, min: 0, rpe: 0 };
+    list.forEach(function (e) { o.load += e.load_au; o.min += e.duration_min; o.rpe += e.rpe; days[e.session_date] = 1; });
+    o.days = Object.keys(days).length; o.rpe = o.n ? o.rpe / o.n : null;
+    return o;
+  }
+  // One row per day with sessions: what was done and the day's total load.
+  function dailyReport(entries) {
+    var by = {};
+    entries.forEach(function (e) { (by[e.session_date] = by[e.session_date] || []).push(e); });
+    var days = Object.keys(by).sort().reverse().slice(0, 31);
+    return '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Sessions</th><th>Count</th><th>Minutes</th><th>Daily load (AU)</th></tr></thead><tbody>' +
+      days.map(function (d) {
+        var l = by[d].sort(function (a, b) { return a.id - b.id; }), t = sumUp(l);
+        return '<tr><td class="num">' + esc(fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short' })) + '</td><td>' +
+          l.map(function (e) { return esc(sessionLabel(e)) + ' <span class="muted">(RPE ' + esc(e.rpe) + ' × ' + esc(e.duration_min) + ')</span>'; }).join('<br>') +
+          '</td><td class="num">' + t.n + '</td><td class="num">' + t.min + '</td><td class="num"><strong>' + t.load + '</strong></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  // Monday-to-Sunday weeks, newest first: load, sessions, days, mean RPE, monotony, strain, change.
+  function weeklyReport(entries) {
+    var t = today(), first = weekStart(entries.reduce(function (a, e) { return e.session_date < a ? e.session_date : a; }, t)), weeks = [];
+    for (var w = weekStart(t); w >= first && weeks.length < 13; w = addDays(w, -7)) weeks.push(w);
+    var rows = weeks.map(function (w) {
+      var end = addDays(w, 6), l = entries.filter(function (e) { return e.session_date >= w && e.session_date <= end; }), o = sumUp(l), daily = [];
+      for (var i = 0; i < 7; i++) { var d = addDays(w, i); daily.push(l.reduce(function (a, e) { return a + (e.session_date === d ? e.load_au : 0); }, 0)); }
+      var mean = o.load / 7, sd = Math.sqrt(daily.reduce(function (a, v) { return a + Math.pow(v - mean, 2); }, 0) / 6);
+      o.week = w; o.end = end; o.monotony = sd > 0 ? mean / sd : null; o.strain = o.monotony == null ? null : o.load * o.monotony;
+      return o;
+    });
+    var chart = rows.length > 1 ? '<div class="card" style="margin-top:1rem"><span class="k">Weekly load (AU)</span>' +
+      barChart(rows.slice().reverse().map(function (r) { return { label: fmtDate(r.week, { day: 'numeric', month: 'short' }), value: r.load }; }), 'AU') + '</div>' : '';
+    return chart + '<div class="table-wrap"><table><thead><tr><th>Week</th><th>Load (AU)</th><th>Change</th><th>Sessions</th><th>Days trained</th><th>Minutes</th><th>Mean RPE</th><th>Monotony</th><th>Strain</th></tr></thead><tbody>' +
+      rows.map(function (r, i) {
+        return '<tr><td class="num">' + esc(fmtDate(r.week, { day: 'numeric', month: 'short' }) + ' – ' + fmtDate(r.end, { day: 'numeric', month: 'short' })) + (r.end >= t ? ' <span class="tag">now</span>' : '') +
+          '</td><td class="num"><strong>' + r.load + '</strong></td><td class="num">' + (rows[i + 1] ? pct(r.load, rows[i + 1].load) : '—') + '</td><td class="num">' + r.n + '</td><td class="num">' + r.days + ' / 7</td><td class="num">' + r.min +
+          '</td><td class="num">' + (r.rpe == null ? '—' : r.rpe.toFixed(1)) + '</td><td class="num' + (r.monotony > 2 ? ' hi' : '') + '">' + (r.monotony == null ? '—' : r.monotony.toFixed(2)) +
+          '</td><td class="num">' + (r.strain == null ? '—' : Math.round(r.strain)) + '</td></tr>';
+      }).join('') + '</tbody></table></div><p class="muted" style="font-size:.85rem;margin-top:.5rem">Change above +30% on the previous week is shown in red. Monotony = mean ÷ SD of the 7 daily loads (red above 2); strain = weekly load × monotony.</p>';
+  }
+  // Calendar months, newest first; the current month's weekly average uses the days elapsed so far.
+  function monthlyReport(entries) {
+    var t = today(), first = entries.reduce(function (a, e) { return e.session_date < a ? e.session_date : a; }, t).slice(0, 7), months = [];
+    for (var m = t.slice(0, 7); m >= first && months.length < 12;) {
+      months.push(m);
+      var y = +m.slice(0, 4), mo = +m.slice(5, 7) - 1; if (mo === 0) { y--; mo = 12; }
+      m = y + '-' + String(mo).padStart(2, '0');
+    }
+    var rows = months.map(function (m) {
+      var o = sumUp(entries.filter(function (e) { return e.session_date.slice(0, 7) === m; }));
+      var len = new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(), elapsed = m === t.slice(0, 7) ? +t.slice(8, 10) : len;
+      o.month = m; o.len = len; o.perWeek = o.load / elapsed * 7;
+      return o;
+    });
+    return '<div class="table-wrap"><table><thead><tr><th>Month</th><th>Load (AU)</th><th>Change</th><th>Weekly average</th><th>Sessions</th><th>Days trained</th><th>Minutes</th><th>Mean RPE</th></tr></thead><tbody>' +
+      rows.map(function (r, i) {
+        return '<tr><td>' + esc(new Date(r.month + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })) + (r.month === t.slice(0, 7) ? ' <span class="tag">now</span>' : '') +
+          '</td><td class="num"><strong>' + r.load + '</strong></td><td class="num">' + (rows[i + 1] ? pct(r.load, rows[i + 1].load) : '—') + '</td><td class="num">' + Math.round(r.perWeek) +
+          '</td><td class="num">' + r.n + '</td><td class="num">' + r.days + ' / ' + r.len + '</td><td class="num">' + r.min + '</td><td class="num">' + (r.rpe == null ? '—' : r.rpe.toFixed(1)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  // Vertical bars (inline SVG), one per label.
+  function barChart(points, unit) {
+    var W = 560, H = 200, L = 44, R = 8, T = 14, B = 30, max = Math.max.apply(null, points.map(function (p) { return p.value; })) || 1;
+    var bw = (W - L - R) / points.length, every = Math.ceil(points.length / 7);
+    function Y(v) { return T + (1 - v / max) * (H - T - B); }
+    return '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Bar chart">' +
+      [0, max / 2, max].map(function (v) {
+        return '<text x="' + (L - 6) + '" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end">' + Math.round(v) + '</text><line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" class="grid"/>';
+      }).join('') +
+      points.map(function (p, i) {
+        var x = L + i * bw + bw * 0.15;
+        return '<rect class="bar" x="' + x.toFixed(1) + '" y="' + Y(p.value).toFixed(1) + '" width="' + (bw * 0.7).toFixed(1) + '" height="' + (H - B - Y(p.value)).toFixed(1) + '"><title>' + esc(p.label) + ': ' + p.value + ' ' + esc(unit) + '</title></rect>' +
+          (i % every === 0 ? '<text x="' + (x + bw * 0.35).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(p.label) + '</text>' : '');
+      }).join('') + '</svg>';
+  }
   function srpeHistory(entries, canDelete) {
     if (!entries.length) return '<p class="empty">No sessions logged yet.</p>';
-    var k = loadMetrics(entries);
+    var k = loadMetrics(entries), t = today();
     function card(label, value, note) { return '<div class="card"><span class="k">' + label + '</span><span class="v">' + value + '</span>' + (note ? '<span class="muted" style="font-size:.85rem">' + note + '</span>' : '') + '</div>'; }
     var acwrNote = k.acwr == null ? 'Needs 3-4 weeks of logs'
       : k.acwr > 1.5 ? '<span class="delta-down">High: above 1.5</span>'
       : k.acwr > 1.3 ? 'Caution: 1.3-1.5'
       : k.acwr < 0.8 ? 'Low: below 0.8' : 'In the 0.8-1.3 range';
-    var cards = '<div class="cards">' + card('Today', k.today + ' AU') + card('Last 7 days (acute)', k.acute + ' AU') +
+    var n = entries.filter(function (e) { return e.session_date === t; }).length;
+    var cards = '<div class="cards">' + card('Today', k.today + ' AU', n + (n === 1 ? ' session' : ' sessions')) + card('Last 7 days (acute)', k.acute + ' AU') +
       card('28-day weekly average (chronic)', Math.round(k.chronic) + ' AU') +
       card('ACWR', k.acwr == null ? '—' : k.acwr.toFixed(2), acwrNote) +
       card('Monotony (7 days)', k.monotony == null ? '—' : k.monotony.toFixed(2), k.monotony != null && k.monotony > 2 ? '<span class="delta-down">High: above 2</span>' : 'Mean / SD of daily load') +
       card('Strain (7 days)', k.strain == null ? '—' : Math.round(k.strain) + ' AU', 'Weekly load × monotony') + '</div>';
     var chart = '<div class="card" style="margin-top:1rem"><span class="k">Daily load, last 28 days (AU)</span>' + lineChart(k.daily28, 'AU') + '</div>';
     var rows = entries.slice().sort(function (a, b) { return a.session_date < b.session_date ? 1 : a.session_date > b.session_date ? -1 : b.id - a.id; }).slice(0, 40);
-    var minDate = addDays(today(), -7);
+    var minDate = addDays(t, -7);
     var table = '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Session</th><th>RPE</th><th>Minutes</th><th>Load (AU)</th><th>Notes</th><th></th></tr></thead><tbody>' +
       rows.map(function (e) {
-        return '<tr><td class="num">' + esc(fmtDate(e.session_date, { weekday: 'short', day: 'numeric', month: 'short' })) + '</td><td>' + esc(e.session_type) + '</td><td class="num">' + esc(e.rpe) +
+        return '<tr><td class="num">' + esc(fmtDate(e.session_date, { weekday: 'short', day: 'numeric', month: 'short' })) + '</td><td>' + esc(sessionLabel(e)) + '</td><td class="num">' + esc(e.rpe) +
           '</td><td class="num">' + esc(e.duration_min) + '</td><td class="num"><strong>' + esc(e.load_au) + '</strong></td><td>' + esc(e.notes) + '</td><td>' +
-          (canDelete === 'all' || (canDelete && e.session_date >= minDate) ? '<button class="link-btn danger" data-del-srpe="' + e.id + '">Delete</button>' : '') + '</td></tr>';
+          // Programme sessions are corrected from the session itself, so they have no Delete here for the client.
+          (canDelete === 'all' || (canDelete && e.session_date >= minDate && !e.training_session_id) ? '<button class="link-btn danger" data-del-srpe="' + e.id + '">Delete</button>' : '') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
-    return cards + chart + '<h3>Sessions</h3>' + table;
+    var views = [['sessions', 'Sessions', table], ['daily', 'Daily', dailyReport(entries)], ['weekly', 'Weekly report', weeklyReport(entries)], ['monthly', 'Monthly report', monthlyReport(entries)]];
+    return cards + chart + '<div class="seg" role="tablist" aria-label="Load reports" style="margin-top:1.5rem">' +
+      views.map(function (v, i) { return '<button type="button" role="tab" data-view="' + v[0] + '" aria-selected="' + (i ? 'false' : 'true') + '">' + v[1] + '</button>'; }).join('') + '</div>' +
+      views.map(function (v, i) { return '<div class="view" data-view-panel="' + v[0] + '"' + (i ? ' hidden' : '') + '>' + v[2] + '</div>'; }).join('');
+  }
+  // Switches between the Sessions / Daily / Weekly / Monthly views; remembers the choice while the page is open.
+  var loadView = 'sessions';
+  function bindLoadViews(root) {
+    function show(name) {
+      loadView = name;
+      $$('[data-view]', root).forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-view') === name ? 'true' : 'false'); });
+      $$('[data-view-panel]', root).forEach(function (p) { p.hidden = p.getAttribute('data-view-panel') !== name; });
+    }
+    $$('[data-view]', root).forEach(function (b) { b.addEventListener('click', function () { show(b.getAttribute('data-view')); }); });
+    if ($('[data-view="' + loadView + '"]', root)) show(loadView);
   }
 
   // ---- Client profile (intake form): one definition shared by the coach and client pages ----
@@ -399,7 +501,7 @@
   window.Portal = {
     ready: ready, sb: sb, esc: esc, fmtDate: fmtDate, fmtDateTime: fmtDateTime, today: today,
     $: $, $$: $$, say: say, must: must, requireUser: requireUser, notConfigured: notConfigured,
-    signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, rpeGuide: rpeGuide, bindRpeGuide: bindRpeGuide, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory,
+    signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, rpeGuide: rpeGuide, bindRpeGuide: bindRpeGuide, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory, bindLoadViews: bindLoadViews, SESSION_TYPES: SESSION_TYPES,
     profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary,
     MEALS: MEALS, MOMENTS: MOMENTS, nutritionPlans: nutritionPlans, weightHistory: weightHistory, supplementList: supplementList,
     mealGallery: mealGallery, loadPhotos: loadPhotos, compressImage: compressImage

@@ -47,7 +47,9 @@
           '</td><td class="num">' + esc(e.target_rpe) + '</td><td>' + esc(e.rest) + '</td><td>' + esc(e.notes) + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
+  function linkedLoad(s) { return data.srpe.find(function (e) { return e.training_session_id === s.id; }); }
   function sessionCard(s) {
+    var ld = linkedLoad(s);
     return '<li id="s-' + s.id + '"><div class="row"><span class="date">' + esc(P.fmtDate(s.session_date, { weekday: 'short', day: 'numeric', month: 'short' })) + '</span>' +
       (s.completed ? '<span class="tag done">Done</span>' : '') + '</div>' +
       '<h3 style="margin:.25rem 0">' + esc(s.title) + '</h3>' + (s.focus ? '<p class="muted">' + esc(s.focus) + '</p>' : '') +
@@ -57,6 +59,8 @@
       '<form class="inline-form report" data-id="' + s.id + '" style="margin:1rem 0 0">' +
       '<label class="check"><input type="checkbox" name="completed"' + (s.completed ? ' checked' : '') + '> Session done</label>' +
       '<label>My RPE (0-10)<input name="rpe" type="number" min="0" max="10" value="' + esc(s.client_rpe) + '"></label>' +
+      '<label>Duration (min)<input name="min" type="number" min="1" max="600" value="' + esc(ld ? ld.duration_min : '') + '"></label>' +
+      (ld ? '<p class="muted" style="align-self:center">Load: <strong>' + ld.load_au + ' AU</strong></p>' : '') +
       P.rpeGuide() +
       '<label class="wide">How did it go?<textarea name="feedback" rows="2">' + esc(s.client_feedback) + '</textarea></label>' +
       '<div><button class="btn btn-line btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form></li>';
@@ -66,12 +70,23 @@
       f.addEventListener('submit', async function (e) {
         e.preventDefault();
         var st = P.$('.status', f); P.say(st, 'Saving…');
-        var rpe = f.rpe.value ? parseInt(f.rpe.value, 10) : null;
+        var rpe = f.rpe.value ? parseInt(f.rpe.value, 10) : null, min = f.elements.min.value ? parseInt(f.elements.min.value, 10) : null;
         var r = await sb.from('training_sessions').update({ completed: f.completed.checked, client_rpe: rpe, client_feedback: f.feedback.value || null }).eq('id', f.getAttribute('data-id'));
         if (r.error) { P.say(st, 'Could not save.', true); return; }
         var s = data.sessions.find(function (x) { return String(x.id) === f.getAttribute('data-id'); });
         if (s) { s.completed = f.completed.checked; s.client_rpe = rpe; s.client_feedback = f.feedback.value; }
-        P.say(st, 'Saved');
+        // RPE and duration put this session in the daily training load (one load entry per programme session).
+        var ld = s && linkedLoad(s);
+        if (s && rpe != null && min) {
+          var u = await sb.from('srpe_entries').upsert({ client_id: uid, training_session_id: s.id, session_date: s.session_date, session_type: 'Programme', title: s.title.slice(0, 120),
+            rpe: rpe, duration_min: min, notes: f.feedback.value.trim().slice(0, 500) || null }, { onConflict: 'training_session_id' }).select().single();
+          if (u.error) { P.say(st, 'Saved, but the training load could not be updated (sessions older than 7 days are locked).', true); return; }
+          data.srpe = data.srpe.filter(function (e) { return e.id !== u.data.id; }).concat(u.data);
+        } else if (ld) {
+          var d = await sb.from('srpe_entries').delete().eq('id', ld.id);
+          if (!d.error) data.srpe = data.srpe.filter(function (e) { return e.id !== ld.id; });
+        }
+        P.say(st, rpe != null && !min ? 'Saved. Add the duration to count this session in your training load.' : 'Saved');
       });
     });
     P.bindFileLinks(root);
@@ -136,14 +151,15 @@
     load: function (el) {
       var t = P.today(), rpe = '';
       for (var i = 0; i <= 10; i++) rpe += '<label title="' + P.CR10[i] + '"><input type="radio" name="rpe" value="' + i + '" required><span>' + i + '</span></label>';
-      el.innerHTML = '<h2>Training load (s-RPE)</h2><p class="muted" style="margin-bottom:1.25rem">About 30 minutes after each session, rate how hard the whole session was (0 = rest, 10 = maximal) and enter its duration. Load = RPE × minutes.</p>' +
+      el.innerHTML = '<h2>Training load (s-RPE)</h2><p class="muted" style="margin-bottom:1.25rem">Add every session you do, including team training with your club and training on your own, even several on the same day. About 30 minutes after each session, rate how hard the whole session was (0 = rest, 10 = maximal) and enter its duration. Load = RPE × minutes; your daily load is the total of the day\'s sessions. Sessions from your programme are counted when you rate them in the programme with their duration.</p>' +
         '<form id="sf" class="hooper">' +
         '<div class="inline-form" style="margin:0"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -7) + '" max="' + t + '"></label>' +
-        '<label>Session<select name="type"><option>Training</option><option>Match</option><option>Gym</option><option>Conditioning</option><option>Other</option></select></label>' +
-        '<label>Duration (min)<input name="min" type="number" min="1" max="600" required></label></div>' +
+        '<label>Session<select name="type">' + P.SESSION_TYPES.map(function (x) { return '<option>' + x + '</option>'; }).join('') + '</select></label>' +
+        '<label>Duration (min)<input name="min" type="number" min="1" max="600" required></label>' +
+        '<label class="wide">Name (optional)<input name="title" maxlength="120" placeholder="Club training, evening · Run on my own"></label></div>' +
         '<fieldset><legend>Session RPE</legend><div class="scale scale-11">' + rpe + '</div><div class="scale-ends"><span>0 rest</span><span id="rpe-label"></span><span>10 maximal</span></div>' + P.rpeGuide() + '</fieldset>' +
         '<label class="muted" for="sn">Notes (optional)</label><input id="sn" name="notes" maxlength="500" class="plain-input">' +
-        '<div class="row"><span>Session load: <span class="hooper-total" id="sl">–</span> AU</span>' +
+        '<div class="row"><span>Session load: <span class="hooper-total" id="sl">–</span> AU <span class="muted" id="dl"></span></span>' +
         '<span><button class="btn btn-solid btn-small" type="submit">Save session</button> <span class="status" role="status"></span></span></div></form>' +
         '<h3>My load</h3><div id="sh">' + P.srpeHistory(data.srpe, true) + '</div>';
       var f = P.$('#sf');
@@ -151,16 +167,20 @@
         var c = f.querySelector('[name=rpe]:checked'), m = +f.elements.min.value;
         P.$('#rpe-label').textContent = c ? P.CR10[+c.value] : '';
         P.$('#sl').textContent = c && m ? (+c.value) * m : '–';
+        var day = data.srpe.filter(function (x) { return x.session_date === f.elements.date.value; });
+        P.$('#dl').textContent = day.length ? '· already that day: ' + day.length + (day.length === 1 ? ' session, ' : ' sessions, ') + day.reduce(function (a, x) { return a + x.load_au; }, 0) + ' AU' : '';
       }
+      calc();
       f.addEventListener('input', calc); f.addEventListener('change', calc); P.bindRpeGuide(f);
       f.addEventListener('submit', async function (e) {
         e.preventDefault(); var st = P.$('.status', f);
-        var row = { client_id: uid, session_date: f.elements.date.value, session_type: f.elements.type.value, rpe: +f.querySelector('[name=rpe]:checked').value,
+        var row = { client_id: uid, session_date: f.elements.date.value, session_type: f.elements.type.value, title: f.elements.title.value.trim() || null, rpe: +f.querySelector('[name=rpe]:checked').value,
           duration_min: +f.elements.min.value, notes: f.elements.notes.value.trim() || null };
         var r = await sb.from('srpe_entries').insert(row).select().single();
         if (r.error) return P.say(st, 'Could not save. Sessions can be logged up to 7 days back.', true);
         data.srpe.push(r.data); render.load(el); P.say(P.$('#sf .status'), 'Saved');
       });
+      P.bindLoadViews(el);
       P.$$('[data-del-srpe]', el).forEach(function (b) {
         b.addEventListener('click', async function () {
           if (!confirm('Delete this session?')) return;
