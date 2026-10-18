@@ -308,10 +308,100 @@
     return bits.length ? '<p class="muted">' + bits.join(' · ') + '</p>' : '';
   }
 
+  // ---- Nutrition: shared by the coach and client pages ----
+  var MEALS = opts('breakfast:Breakfast|lunch:Lunch|dinner:Dinner|snack:Snack|other:Other');
+  var MOMENTS = { week_start: 'Start of week', week_end: 'End of week' };
+  function label(list, v) { var o = list.find(function (x) { return x[0] === v; }); return o ? o[1] : v; }
+  function nutritionPlans(list, canDelete) {
+    if (!list.length) return '<p class="empty">No nutrition programme or recommendation yet.</p>';
+    return '<ul class="list">' + list.map(function (n) {
+      return '<li><div class="row"><span><span class="tag">' + (n.kind === 'recommendation' ? 'Recommendation' : 'Programme') + '</span> <strong>' + esc(n.title) + '</strong></span>' +
+        '<span><span class="date">' + esc(fmtDate(n.created_at)) + '</span>' + (canDelete ? ' · <button class="link-btn danger" data-del-plan="' + n.id + '" data-path="' + esc(n.file_path || '') + '">Delete</button>' : '') + '</span></div>' +
+        (n.body ? '<p class="pre" style="margin-top:.5rem">' + esc(n.body) + '</p>' : '') +
+        (n.file_path ? '<p style="margin-top:.5rem"><a href="#" data-file="' + esc(n.file_path) + '">Open the attached file</a></p>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+  // Weigh-ins sorted oldest first: summary cards, chart and table with the change since the previous weigh-in.
+  function weightHistory(logs, canDelete) {
+    if (!logs.length) return '<p class="empty">No weigh-ins yet.</p>';
+    var first = logs[0], last = logs[logs.length - 1], d = last.weight_kg - first.weight_kg;
+    var end = logs.slice().reverse().find(function (l) { return l.moment === 'week_end'; });
+    var start = end && logs.slice().reverse().find(function (l) { return l.moment === 'week_start' && l.log_date <= end.log_date && l.log_date >= addDays(end.log_date, -7); });
+    function sign(v) { return (v > 0 ? '+' : '') + (+v.toFixed(1)) + ' kg'; }
+    var minDate = addDays(today(), -14);
+    return '<div class="cards"><div class="card"><span class="k">Latest weight</span><span class="v">' + esc(last.weight_kg) + ' kg</span><span class="muted">' + esc(fmtDate(last.log_date)) + '</span></div>' +
+      '<div class="card"><span class="k">Last full week</span><span class="v">' + (start ? sign(end.weight_kg - start.weight_kg) : '—') + '</span><span class="muted">' + (start ? esc(start.weight_kg) + ' → ' + esc(end.weight_kg) + ' kg' : 'Needs a start and an end weigh-in') + '</span></div>' +
+      '<div class="card"><span class="k">Since first weigh-in</span><span class="v">' + (logs.length > 1 ? sign(d) : '—') + '</span><span class="muted">' + esc(fmtDate(first.log_date)) + '</span></div></div>' +
+      '<div class="card" style="margin-top:1rem"><span class="k">Body weight (kg)</span>' + lineChart(logs.map(function (l) { return { date: l.log_date, value: l.weight_kg }; }), 'kg') + '</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Weigh-in</th><th>Weight</th><th>Change</th><th>Notes</th><th></th></tr></thead><tbody>' +
+      logs.map(function (l, i) {
+        var ch = i ? l.weight_kg - logs[i - 1].weight_kg : null;
+        return '<tr><td class="num">' + esc(fmtDate(l.log_date, { weekday: 'short', day: 'numeric', month: 'short' })) + '</td><td>' + MOMENTS[l.moment] + '</td><td class="num"><strong>' + esc(l.weight_kg) + ' kg</strong></td>' +
+          '<td class="num">' + (ch == null ? '' : sign(ch)) + '</td><td>' + esc(l.notes) + '</td><td>' +
+          (canDelete === 'all' || (canDelete && l.log_date >= minDate) ? '<button class="link-btn danger" data-del-weight="' + l.id + '">Delete</button>' : '') + '</td></tr>';
+      }).reverse().join('') + '</tbody></table></div>';
+  }
+  function supplementList(list, canEdit) {
+    if (!list.length) return '<p class="empty">No supplements listed.</p>';
+    return '<ul class="list">' + list.map(function (s) {
+      return '<li class="supp' + (s.active ? '' : ' muted') + '">' + (s.photo_path ? '<img alt="" data-photo="' + esc(s.photo_path) + '">' : '') + '<div><div class="row"><strong>' + esc(s.name) + '</strong><span>' +
+        (s.active ? '<span class="tag done">Taking now</span>' : '<span class="tag">Stopped</span>') +
+        (canEdit ? ' <button class="link-btn" data-supp-toggle="' + s.id + '" data-on="' + (s.active ? 1 : 0) + '">' + (s.active ? 'Mark stopped' : 'Taking again') + '</button> · <button class="link-btn danger" data-del-supp="' + s.id + '" data-path="' + esc(s.photo_path || '') + '">Delete</button>' : '') + '</span></div>' +
+        '<p class="muted">' + [s.dose, s.timing].filter(Boolean).map(esc).join(' · ') + '</p>' + (s.notes ? '<p class="pre">' + esc(s.notes) + '</p>' : '') + '</div></li>';
+    }).join('') + '</ul>';
+  }
+  // Meal photos grouped by day, newest first. who: 'client' (may delete recent ones) or 'coach' (comments).
+  function mealGallery(meals, who) {
+    if (!meals.length) return '<p class="empty">No meal photos yet.</p>';
+    var days = {}, order = [], minDate = addDays(today(), -7);
+    meals.forEach(function (m) { if (!days[m.meal_date]) { days[m.meal_date] = []; order.push(m.meal_date); } days[m.meal_date].push(m); });
+    order.sort().reverse();
+    return order.map(function (d) {
+      return '<h4 class="date" style="margin:1.25rem 0 .5rem">' + esc(fmtDate(d, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })) + '</h4><div class="meals">' +
+        days[d].map(function (m) {
+          return '<figure class="meal"><a href="#" data-file="' + esc(m.photo_path) + '"><img alt="' + esc(label(MEALS, m.meal)) + '" data-photo="' + esc(m.photo_path) + '"></a><figcaption><strong>' + esc(label(MEALS, m.meal)) + '</strong>' +
+            (m.notes ? '<span class="pre">' + esc(m.notes) + '</span>' : '') +
+            (who === 'coach'
+              ? '<form class="meal-comment" data-id="' + m.id + '"><textarea name="c" rows="2" maxlength="1000" placeholder="Comment for the client" aria-label="Coach comment">' + esc(m.coach_comment) + '</textarea><button class="btn btn-line btn-small" type="submit">Save</button> <span class="status" role="status"></span></form>'
+              : (m.coach_comment ? '<span class="coach-c"><b>Coach:</b> ' + esc(m.coach_comment) + '</span>' : '')) +
+            (who === 'coach' || m.meal_date >= minDate ? '<button class="link-btn danger" data-del-meal="' + m.id + '" data-path="' + esc(m.photo_path) + '">Delete</button>' : '') +
+            '</figcaption></figure>';
+        }).join('') + '</div>';
+    }).join('');
+  }
+  // Fills every <img data-photo> in root with a short-lived signed link (one request for all).
+  async function loadPhotos(root) {
+    var imgs = $$('img[data-photo]', root);
+    if (!imgs.length) return;
+    var paths = Array.from(new Set(imgs.map(function (i) { return i.getAttribute('data-photo'); })));
+    var r = await sb.storage.from('client-files').createSignedUrls(paths, 3600);
+    if (r.error) return;
+    var url = {}; r.data.forEach(function (x) { if (x.signedUrl) url[x.path] = x.signedUrl; });
+    imgs.forEach(function (i) { var u = url[i.getAttribute('data-photo')]; if (u) i.src = u; });
+  }
+  // Shrinks a phone photo to at most 1600 px (JPEG) before upload; returns the original if the browser cannot read it.
+  function compressImage(file) {
+    return new Promise(function (resolve) {
+      if (!/^image\//.test(file.type)) return resolve(file);
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(u);
+        c.toBlob(function (b) { resolve(b && b.size < file.size ? b : file); }, 'image/jpeg', 0.82);
+      };
+      img.onerror = function () { URL.revokeObjectURL(u); resolve(file); };
+      img.src = u;
+    });
+  }
+
   window.Portal = {
     ready: ready, sb: sb, esc: esc, fmtDate: fmtDate, fmtDateTime: fmtDateTime, today: today,
     $: $, $$: $$, say: say, must: must, requireUser: requireUser, notConfigured: notConfigured,
     signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, rpeGuide: rpeGuide, bindRpeGuide: bindRpeGuide, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory,
-    profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary
+    profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary,
+    MEALS: MEALS, MOMENTS: MOMENTS, nutritionPlans: nutritionPlans, weightHistory: weightHistory, supplementList: supplementList,
+    mealGallery: mealGallery, loadPhotos: loadPhotos, compressImage: compressImage
   };
 })();

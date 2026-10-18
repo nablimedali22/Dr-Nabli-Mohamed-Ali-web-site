@@ -155,3 +155,16 @@ td.hi{color:#b3261e;font-weight:600}
   .rpe-scale b{grid-area:n;align-self:start}
   .rpe-scale strong{grid-area:t}.rpe-scale span{grid-area:f}.rpe-scale .ex{grid-area:x;font-size:.85rem}
 }
+
+/* nutrition: meal photo gallery and supplement list */
+.meals{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,13rem),1fr));gap:.9rem}
+.meal{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+.meal img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--bg)}
+.meal figcaption{padding:.6rem .75rem;display:flex;flex-direction:column;gap:.35rem;font-size:.9rem;align-items:flex-start}
+.meal .coach-c{border-left:3px solid var(--accent);padding-left:.5rem}
+.meal-comment{display:flex;flex-direction:column;gap:.35rem;width:100%}
+.meal-comment textarea{font:inherit;font-size:.88rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.4rem .5rem;width:100%}
+.meal-comment button{align-self:flex-start}
+.list > li.supp{display:flex;gap:1rem;align-items:flex-start}
+.supp img{width:4rem;height:4rem;object-fit:cover;border-radius:4px;flex:none;background:var(--bg)}
+.supp > div{flex:1;min-width:0}
