@@ -161,7 +161,8 @@
     },
     load: async function (el) {
       var list = await rows('srpe_entries', 'session_date', true);
-      el.innerHTML = '<p class="muted" style="margin-bottom:1rem">Session RPE (CR-10) × duration, logged by the client. ACWR = last 7 days ÷ weekly average of the last 28 days.</p>' + P.srpeHistory(list, 'all');
+      el.innerHTML = '<p class="muted" style="margin-bottom:1rem">Session RPE (CR-10) × duration, logged by the client: their own sessions (team training, self-training…) and the programme sessions they rated with a duration. Daily load = total of the day\'s sessions. ACWR = last 7 days ÷ weekly average of the last 28 days.</p>' + P.srpeHistory(list, 'all');
+      P.bindLoadViews(el);
       P.$$('[data-del-srpe]', el).forEach(function (b) {
         b.addEventListener('click', async function () {
           if (!confirm('Delete this session?')) return;
