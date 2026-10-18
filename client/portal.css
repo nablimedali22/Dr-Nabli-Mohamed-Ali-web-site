@@ -13,7 +13,9 @@
 .intake-card{border:1px solid var(--line);border-radius:8px;margin-top:2rem;background:var(--surface)}
 .intake-card summary{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;cursor:pointer;list-style:none;font-weight:600}
 .intake-card summary::-webkit-details-marker{display:none}
-.intake-icon{display:grid;place-items:center;width:2.2rem;height:2.2rem;border-radius:50%;background:var(--bg);color:var(--accent);flex:none}
+.intake-icon{display:block;width:2.6rem;height:2.6rem;flex:none;filter:drop-shadow(0 1px 2px rgba(21,32,51,.25))}
+.intake-icon svg{width:100%;height:100%;display:block}
+.intake-card summary:hover .intake-icon{transform:scale(1.06)}.intake-icon{transition:transform .15s}
 .intake-title{flex:1}
 .intake-chev{font-size:1.5rem;line-height:1;color:var(--muted);transition:transform .15s}
 .intake-card[open] .intake-chev{transform:rotate(90deg)}
