@@ -115,3 +115,24 @@ td.hi{color:#b3261e;font-weight:600}
 .team-list > li .members{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem}
 .chip{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--line);border-radius:999px;padding:.15rem .6rem;font-size:.88rem;background:var(--bg)}
 .coach-layout > *{min-width:0}
+
+/* RPE 0-10 guide */
+.rpe-guide{grid-column:1/-1;margin-top:.6rem;font-size:.92rem}
+.rpe-guide summary{cursor:pointer;font-weight:600;color:var(--accent);padding:.2rem 0;width:fit-content}
+.rpe-guide summary::after{content:"";display:block;height:6px;margin-top:.35rem;border-radius:3px;background:linear-gradient(90deg,#1d4f9c,#0f7d94,#167a4b,#9aa40f,#e3a612,#ee7d14,#d9481c,#8f1218)}
+.rpe-head,.rpe-scale button{display:grid;grid-template-columns:2.6rem minmax(7rem,1fr) minmax(0,2fr) minmax(0,1.4fr);gap:.2rem .8rem;align-items:center}
+.rpe-head{font-family:var(--mono);font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:.6rem .6rem .3rem}
+.rpe-scale{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.rpe-scale button{width:100%;font:inherit;text-align:left;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:4px;padding:.35rem .6rem;cursor:pointer}
+.rpe-scale button:hover{border-color:var(--c)}
+.rpe-scale button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.rpe-scale b{display:inline-grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:4px;background:var(--c);color:var(--ci);font-family:var(--mono);font-size:1.05rem}
+.rpe-scale strong{font-weight:600}
+.rpe-scale .ex{color:var(--muted)}
+.rpe-tip{margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
+@media (max-width:40rem){
+  .rpe-head{display:none}
+  .rpe-scale button{grid-template-columns:2.6rem minmax(0,1fr);grid-template-areas:"n t" "n f" "n x"}
+  .rpe-scale b{grid-area:n;align-self:start}
+  .rpe-scale strong{grid-area:t}.rpe-scale span{grid-area:f}.rpe-scale .ex{grid-area:x;font-size:.85rem}
+}

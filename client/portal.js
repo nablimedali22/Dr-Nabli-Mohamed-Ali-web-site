@@ -135,7 +135,42 @@
   }
 
   // ---- s-RPE training load (Foster): load = RPE (CR-10) x minutes, in AU ----
-  var CR10 = ['Rest', 'Very, very easy', 'Easy', 'Moderate', 'Somewhat hard', 'Hard', 'Hard +', 'Very hard', 'Very hard +', 'Very hard ++', 'Maximal'];
+  // Perceived exertion scale 0-10 (Dr Nabli's chart): label, how it feels, example activity, colour and its text colour.
+  var RPE_SCALE = [
+    ['Complete rest', 'Totally relaxed, no effort at all.', 'Sitting, sleeping', '#1d4f9c', '#fff'],
+    ['Very, very light', 'Very little effort, I am barely moving.', 'Very slow walk', '#2563c4', '#fff'],
+    ['Light', 'Easy and comfortable, I could keep going for hours.', 'Easy walk', '#0f7d94', '#fff'],
+    ['Moderate', 'Slight effort, my breathing is normal.', 'Brisk walk', '#167a4b', '#fff'],
+    ['Medium', 'Moderate effort, I can talk easily.', 'Easy jog / easy cycling', '#3f7f1f', '#fff'],
+    ['Medium-high', 'Clear effort, I breathe a little faster.', 'Light run / moderate cycling', '#9aa40f', '#14181f'],
+    ['Hard', 'I feel tired, talking gets harder.', 'Moderate-pace run', '#e3a612', '#14181f'],
+    ['Very hard', 'Big effort, I breathe heavily.', 'Fast run', '#ee7d14', '#14181f'],
+    ['Very, very hard', 'Intense effort, I can barely speak.', 'High-intensity run', '#d9481c', '#fff'],
+    ['Near maximal', 'Almost all-out, I cannot keep this up for long.', 'Almost maximal effort', '#bf2420', '#fff'],
+    ['Maximal', 'Everything I have, I cannot continue.', 'Maximal effort', '#8f1218', '#fff']
+  ];
+  var CR10 = RPE_SCALE.map(function (r) { return r[0]; });
+  // Colour-coded 0-10 guide shown next to RPE inputs; a click on a level fills the form's RPE field.
+  function rpeGuide(open) {
+    return '<details class="rpe-guide wide"' + (open ? ' open' : '') + '><summary>RPE scale 0–10: how hard was the session?</summary>' +
+      '<div class="rpe-head" aria-hidden="true"><span>Level</span><span>Description</span><span>How does it feel?</span><span>Example</span></div><ol class="rpe-scale">' +
+      RPE_SCALE.map(function (r, i) {
+        return '<li style="--c:' + r[3] + ';--ci:' + r[4] + '"><button type="button" data-rpe="' + i + '" title="Choose RPE ' + i + '">' +
+          '<b>' + i + '</b><strong>' + r[0] + '</strong><span>' + r[1] + '</span><span class="ex">' + r[2] + '</span></button></li>';
+      }).join('') + '</ol><p class="rpe-tip">Tap a level to fill in your RPE.</p></details>';
+  }
+  function bindRpeGuide(root) {
+    $$('[data-rpe]', root).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var f = b.closest('form'), v = b.getAttribute('data-rpe'); if (!f) return;
+        var el = f.querySelector('input[name=rpe][value="' + v + '"]') || f.querySelector('input[name=rpe]:not([type=radio])');
+        if (!el) return;
+        if (el.type === 'radio') el.checked = true; else el.value = v;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.focus();
+      });
+    });
+  }
   function isoDay(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function addDays(iso, n) { var d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return isoDay(d); }
   // Daily totals and the usual indicators over the 7 and 28 days ending today.
@@ -276,7 +311,7 @@
   window.Portal = {
     ready: ready, sb: sb, esc: esc, fmtDate: fmtDate, fmtDateTime: fmtDateTime, today: today,
     $: $, $$: $$, say: say, must: must, requireUser: requireUser, notConfigured: notConfigured,
-    signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory,
+    signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, rpeGuide: rpeGuide, bindRpeGuide: bindRpeGuide, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory,
     profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary
   };
 })();

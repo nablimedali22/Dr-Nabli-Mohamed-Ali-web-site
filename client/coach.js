@@ -125,7 +125,7 @@
             (s.focus ? '<p class="muted">' + esc(s.focus) + '</p>' : '') +
             (ex.length ? '<p style="font-size:.92rem;margin-top:.3rem">' + ex.map(function (e) { return esc(e.name) + (e.sets ? ' ' + esc(e.sets) + '×' + esc(e.reps || '') : '') + (e.load ? ' @ ' + esc(e.load) : '') + (e.target_rpe ? ' RPE ' + esc(e.target_rpe) : ''); }).join(' · ') + '</p>' : '') +
             (s.pdf_path ? '<p><a href="#" data-file="' + esc(s.pdf_path) + '">Programme PDF</a></p>' : '') +
-            (s.client_rpe || s.client_feedback ? '<p style="margin-top:.4rem"><strong>Client:</strong> ' + (s.client_rpe ? 'RPE ' + esc(s.client_rpe) + '. ' : '') + esc(s.client_feedback || '') + '</p>' : '') + '</li>';
+            (s.client_rpe != null || s.client_feedback ? '<p style="margin-top:.4rem"><strong>Client:</strong> ' + (s.client_rpe != null ? 'RPE ' + esc(s.client_rpe) + '. ' : '') + esc(s.client_feedback || '') + '</p>' : '') + '</li>';
         }).join('') + '</ul>' : empty('No sessions yet.'));
       P.$('#add-ex').addEventListener('click', function () { P.$('.ex-rows', el).insertAdjacentHTML('beforeend', exRow()); });
       onSubmit(P.$('form', el), async function (f) {

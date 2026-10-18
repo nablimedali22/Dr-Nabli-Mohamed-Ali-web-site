@@ -134,7 +134,7 @@ create table if not exists public.training_sessions (
   coach_notes     text,
   pdf_path        text,           -- file in bucket client-files, under <client_id>/
   completed       boolean not null default false,
-  client_rpe      int check (client_rpe is null or client_rpe between 1 and 10),
+  client_rpe      int check (client_rpe is null or client_rpe between 0 and 10),
   client_feedback text,
   created_at      timestamptz not null default now()
 );
@@ -505,3 +505,10 @@ revoke all on function public.log_profile_weight() from public;
 drop trigger if exists log_profile_weight on public.profiles;
 create trigger log_profile_weight after insert or update of weight_kg on public.profiles
   for each row execute function public.log_profile_weight();
+
+-- =====================================================================
+-- Allow RPE 0 on training sessions (same 0-10 scale as s-RPE)
+-- =====================================================================
+alter table public.training_sessions drop constraint if exists training_sessions_client_rpe_check;
+alter table public.training_sessions add constraint training_sessions_client_rpe_check
+  check (client_rpe is null or client_rpe between 0 and 10);
