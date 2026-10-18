@@ -16,10 +16,14 @@
 <nav aria-label="Main"><a href="../index.html">Website</a><a href="../coaching.html">Coaching</a><a href="../contact.html">Contact</a></nav>
 </div></header>
 <main>
-<section><div class="wrap narrow">
+<section><div class="wrap">
+<div class="narrow">
 <p class="eyebrow">Coaching · Client Space</p>
 <h1>Log in</h1>
 <p class="lede">Your training programme, tests, progress and messages with your coach, in one private place.</p>
+</div>
+<div class="auth-grid">
+<div>
 <div class="auth-card">
 <form id="login" class="form">
 <label for="email">Email</label><input id="email" type="email" autocomplete="email" required>
@@ -30,6 +34,19 @@
 <div class="auth-links"><a href="forgot.html">Forgot your password?</a><a href="../contact.html">No account yet? Contact me</a></div>
 </div>
 <p class="muted" style="margin-top:1.5rem">Accounts are created by your coach. There is no public sign-up.</p>
+</div>
+<details class="intake-card">
+<summary><span class="intake-icon" aria-hidden="true"><svg viewBox="0 0 40 40" width="40" height="40"><rect width="40" height="40" rx="9" fill="#8a1538"/><rect x="11" y="9" width="18" height="23" rx="2.5" fill="#fff"/><rect x="15.5" y="7" width="9" height="4.5" rx="1.5" fill="#f2c7d3" stroke="#8a1538" stroke-width="1.2"/><path d="M14.5 17.5l1.6 1.6 2.8-3M14.5 24l1.6 1.6 2.8-3" fill="none" stroke="#8a1538" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 17.5h4.5M21 24h4.5" stroke="#152033" stroke-width="1.6" stroke-linecap="round" opacity=".55"/><circle cx="29" cy="30" r="6" fill="#152033" stroke="#8a1538" stroke-width="1.5"/><path d="M29 27.2v5m-2.1-2 2.1 2.1 2.1-2.1" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="intake-title">New client? Intake form</span><span class="intake-chev" aria-hidden="true">›</span></summary>
+<div class="intake-body">
+<ul class="intake-list">
+<li><a href="../forms/client-intake-form-en.pdf" download lang="en"><span class="intake-lang">English</span><span class="intake-meta">PDF</span></a></li>
+<li><a href="../forms/client-intake-form-fr.pdf" download lang="fr"><span class="intake-lang">Français</span><span class="intake-meta">PDF</span></a></li>
+<li><a href="../forms/client-intake-form-ar.pdf" download lang="ar" dir="rtl"><span class="intake-lang">العربية</span><span class="intake-meta"><bdi>PDF</bdi></span></a></li>
+</ul>
+<p class="muted intake-note">Fill it in, then send it back by <a href="mailto:nablimedali@live.fr">email</a> or <a href="https://wa.me/97466521377">WhatsApp</a>.</p>
+</div>
+</details>
+</div>
 </div></section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

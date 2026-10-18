@@ -16,13 +16,28 @@
       q('documents', '*', 'created_at'),
       q('messages', '*', 'created_at', true),
       q('wellness_entries', '*', 'entry_date', true),
-      q('srpe_entries', '*', 'session_date', true)
+      q('srpe_entries', '*', 'session_date', true),
+      q('nutrition_plans', '*', 'created_at'),
+      q('weight_logs', '*', 'log_date', true),
+      q('supplements', '*', 'created_at'),
+      q('meal_photos', '*', 'created_at')
     ]);
-    r.forEach(function (x) { if (x.error) throw x.error; });
-    data = { plans: r[0].data, sessions: r[1].data, tests: r[2].data, notes: r[3].data, docs: r[4].data, msgs: r[5].data, wellness: r[6].data, srpe: r[7].data };
+    // Nutrition tables (07-nutrition.sql) may not exist yet: show them empty instead of breaking the dashboard.
+    r.forEach(function (x, i) { if (x.error) { if (i < 8) throw x.error; x.data = []; } });
+    data = { plans: r[0].data, sessions: r[1].data, tests: r[2].data, notes: r[3].data, docs: r[4].data, msgs: r[5].data, wellness: r[6].data, srpe: r[7].data,
+      nplans: r[8].data, weights: sortWeights(r[9].data), supps: r[10].data, meals: r[11].data };
     data.sessions.forEach(function (s) { (s.session_exercises || []).sort(function (a, b) { return a.position - b.position; }); });
   }
 
+  function sortWeights(a) { return a.sort(function (x, y) { return x.log_date < y.log_date ? -1 : x.log_date > y.log_date ? 1 : x.moment === 'week_start' ? -1 : 1; }); }
+  function safeName(n) { return n.normalize('NFKD').replace(/[^\w.\-]+/g, '_').slice(-60); }
+  // Photos go to <client id>/nutrition/, the only folder a client may upload to.
+  async function uploadPhoto(file) {
+    var blob = await P.compressImage(file), jpg = blob !== file;
+    var path = uid + '/nutrition/' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-' + safeName(jpg ? file.name.replace(/\.[^.]*$/, '') + '.jpg' : file.name);
+    P.must(await sb.storage.from('client-files').upload(path, blob, { contentType: jpg ? 'image/jpeg' : (file.type || undefined) }));
+    return path;
+  }
   function empty(t) { return '<p class="empty">' + esc(t) + '</p>'; }
   // Exercises the coach listed under "exercises to avoid" are flagged in the session.
   var avoid = (me.profile.restrictions || '').split(/[\n,;]/).map(function (l) { return l.trim().toLowerCase(); }).filter(function (l) { return l.length > 2; });
@@ -36,7 +51,9 @@
           '</td><td class="num">' + esc(e.target_rpe) + '</td><td>' + esc(e.rest) + '</td><td>' + esc(e.notes) + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
+  function linkedLoad(s) { return data.srpe.find(function (e) { return e.training_session_id === s.id; }); }
   function sessionCard(s) {
+    var ld = linkedLoad(s);
     return '<li id="s-' + s.id + '"><div class="row"><span class="date">' + esc(P.fmtDate(s.session_date, { weekday: 'short', day: 'numeric', month: 'short' })) + '</span>' +
       (s.completed ? '<span class="tag done">Done</span>' : '') + '</div>' +
       '<h3 style="margin:.25rem 0">' + esc(s.title) + '</h3>' + (s.focus ? '<p class="muted">' + esc(s.focus) + '</p>' : '') +
@@ -45,7 +62,10 @@
       (s.pdf_path ? '<p style="margin-top:.75rem"><a href="#" data-file="' + esc(s.pdf_path) + '">Download the programme (PDF)</a></p>' : '') +
       '<form class="inline-form report" data-id="' + s.id + '" style="margin:1rem 0 0">' +
       '<label class="check"><input type="checkbox" name="completed"' + (s.completed ? ' checked' : '') + '> Session done</label>' +
-      '<label>My RPE (1-10)<input name="rpe" type="number" min="1" max="10" value="' + esc(s.client_rpe) + '"></label>' +
+      '<label>My RPE (0-10)<input name="rpe" type="number" min="0" max="10" value="' + esc(s.client_rpe) + '"></label>' +
+      '<label>Duration (min)<input name="min" type="number" min="1" max="600" value="' + esc(ld ? ld.duration_min : '') + '"></label>' +
+      (ld ? '<p class="muted" style="align-self:center">Load: <strong>' + ld.load_au + ' AU</strong></p>' : '') +
+      P.rpeGuide() +
       '<label class="wide">How did it go?<textarea name="feedback" rows="2">' + esc(s.client_feedback) + '</textarea></label>' +
       '<div><button class="btn btn-line btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form></li>';
   }
@@ -96,15 +116,27 @@
       f.addEventListener('submit', async function (e) {
         e.preventDefault();
         var st = P.$('.status', f); P.say(st, 'Saving…');
-        var rpe = f.rpe.value ? parseInt(f.rpe.value, 10) : null;
+        var rpe = f.rpe.value ? parseInt(f.rpe.value, 10) : null, min = f.elements.min.value ? parseInt(f.elements.min.value, 10) : null;
         var r = await sb.from('training_sessions').update({ completed: f.completed.checked, client_rpe: rpe, client_feedback: f.feedback.value || null }).eq('id', f.getAttribute('data-id'));
         if (r.error) { P.say(st, 'Could not save.', true); return; }
         var s = data.sessions.find(function (x) { return String(x.id) === f.getAttribute('data-id'); });
         if (s) { s.completed = f.completed.checked; s.client_rpe = rpe; s.client_feedback = f.feedback.value; }
-        P.say(st, 'Saved');
+        // RPE and duration put this session in the daily training load (one load entry per programme session).
+        var ld = s && linkedLoad(s);
+        if (s && rpe != null && min) {
+          var u = await sb.from('srpe_entries').upsert({ client_id: uid, training_session_id: s.id, session_date: s.session_date, session_type: 'Programme', title: s.title.slice(0, 120),
+            rpe: rpe, duration_min: min, notes: f.feedback.value.trim().slice(0, 500) || null }, { onConflict: 'training_session_id' }).select().single();
+          if (u.error) { P.say(st, 'Saved, but the training load could not be updated (sessions older than 7 days are locked).', true); return; }
+          data.srpe = data.srpe.filter(function (e) { return e.id !== u.data.id; }).concat(u.data);
+        } else if (ld) {
+          var d = await sb.from('srpe_entries').delete().eq('id', ld.id);
+          if (!d.error) data.srpe = data.srpe.filter(function (e) { return e.id !== ld.id; });
+        }
+        P.say(st, rpe != null && !min ? 'Saved. Add the duration to count this session in your training load.' : 'Saved');
       });
     });
     P.bindFileLinks(root);
+    P.bindRpeGuide(root);
   }
 
   var render = {
@@ -124,6 +156,10 @@
           return w ? '<span class="v">' + w.hooper + ' / 28</span><a href="#wellness">Update</a>' : '<span class="v">—</span><a href="#wellness">Log it now</a>';
         })() + '</div>' +
         '<div class="card"><span class="k">Training load, last 7 days</span><span class="v">' + P.loadMetrics(data.srpe).acute + ' AU</span><a href="#load">Log a session</a></div>' +
+        '<div class="card"><span class="k">Body weight</span>' + (function () {
+          var l = data.weights[data.weights.length - 1];
+          return l ? '<span class="v">' + esc(l.weight_kg) + ' kg</span><span class="muted">' + esc(P.MOMENTS[l.moment] + ', ' + P.fmtDate(l.log_date)) + '</span>' : '<span class="v">—</span>';
+        })() + '<a href="#nutrition">Weigh-in and meals</a></div>' +
         '<div class="card"><span class="k">New messages</span><span class="v">' + unread + '</span>' + (unread ? '<a href="#messages">Read them</a>' : '') + '</div></div>' +
         '<h2 style="margin-top:2rem">Today</h2>' + (todays.length ? '<ul class="list">' + todays.map(sessionCard).join('') + '</ul>' : empty('No session planned for today. Rest well.'));
       bindReports(el);
@@ -161,14 +197,15 @@
     load: function (el) {
       var t = P.today(), rpe = '';
       for (var i = 0; i <= 10; i++) rpe += '<label title="' + P.CR10[i] + '"><input type="radio" name="rpe" value="' + i + '" required><span>' + i + '</span></label>';
-      el.innerHTML = '<h2>Training load (s-RPE)</h2><p class="muted" style="margin-bottom:1.25rem">About 30 minutes after each session, rate how hard the whole session was (0 = rest, 10 = maximal) and enter its duration. Load = RPE × minutes.</p>' +
+      el.innerHTML = '<h2>Training load (s-RPE)</h2><p class="muted" style="margin-bottom:1.25rem">Add every session you do, including team training with your club and training on your own, even several on the same day. About 30 minutes after each session, rate how hard the whole session was (0 = rest, 10 = maximal) and enter its duration. Load = RPE × minutes; your daily load is the total of the day\'s sessions. Sessions from your programme are counted when you rate them in the programme with their duration.</p>' +
         '<form id="sf" class="hooper">' +
         '<div class="inline-form" style="margin:0"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -7) + '" max="' + t + '"></label>' +
-        '<label>Session<select name="type"><option>Training</option><option>Match</option><option>Gym</option><option>Conditioning</option><option>Other</option></select></label>' +
-        '<label>Duration (min)<input name="min" type="number" min="1" max="600" required></label></div>' +
-        '<fieldset><legend>Session RPE</legend><div class="scale scale-11">' + rpe + '</div><div class="scale-ends"><span>0 rest</span><span id="rpe-label"></span><span>10 maximal</span></div></fieldset>' +
+        '<label>Session<select name="type">' + P.SESSION_TYPES.map(function (x) { return '<option>' + x + '</option>'; }).join('') + '</select></label>' +
+        '<label>Duration (min)<input name="min" type="number" min="1" max="600" required></label>' +
+        '<label class="wide">Name (optional)<input name="title" maxlength="120" placeholder="Club training, evening · Run on my own"></label></div>' +
+        '<fieldset><legend>Session RPE</legend><div class="scale scale-11">' + rpe + '</div><div class="scale-ends"><span>0 rest</span><span id="rpe-label"></span><span>10 maximal</span></div>' + P.rpeGuide() + '</fieldset>' +
         '<label class="muted" for="sn">Notes (optional)</label><input id="sn" name="notes" maxlength="500" class="plain-input">' +
-        '<div class="row"><span>Session load: <span class="hooper-total" id="sl">–</span> AU</span>' +
+        '<div class="row"><span>Session load: <span class="hooper-total" id="sl">–</span> AU <span class="muted" id="dl"></span></span>' +
         '<span><button class="btn btn-solid btn-small" type="submit">Save session</button> <span class="status" role="status"></span></span></div></form>' +
         '<h3>My load</h3><div id="sh">' + P.srpeHistory(data.srpe, true) + '</div>';
       var f = P.$('#sf');
@@ -176,16 +213,20 @@
         var c = f.querySelector('[name=rpe]:checked'), m = +f.elements.min.value;
         P.$('#rpe-label').textContent = c ? P.CR10[+c.value] : '';
         P.$('#sl').textContent = c && m ? (+c.value) * m : '–';
+        var day = data.srpe.filter(function (x) { return x.session_date === f.elements.date.value; });
+        P.$('#dl').textContent = day.length ? '· already that day: ' + day.length + (day.length === 1 ? ' session, ' : ' sessions, ') + day.reduce(function (a, x) { return a + x.load_au; }, 0) + ' AU' : '';
       }
-      f.addEventListener('input', calc); f.addEventListener('change', calc);
+      calc();
+      f.addEventListener('input', calc); f.addEventListener('change', calc); P.bindRpeGuide(f);
       f.addEventListener('submit', async function (e) {
         e.preventDefault(); var st = P.$('.status', f);
-        var row = { client_id: uid, session_date: f.elements.date.value, session_type: f.elements.type.value, rpe: +f.querySelector('[name=rpe]:checked').value,
+        var row = { client_id: uid, session_date: f.elements.date.value, session_type: f.elements.type.value, title: f.elements.title.value.trim() || null, rpe: +f.querySelector('[name=rpe]:checked').value,
           duration_min: +f.elements.min.value, notes: f.elements.notes.value.trim() || null };
         var r = await sb.from('srpe_entries').insert(row).select().single();
         if (r.error) return P.say(st, 'Could not save. Sessions can be logged up to 7 days back.', true);
         data.srpe.push(r.data); render.load(el); P.say(P.$('#sf .status'), 'Saved');
       });
+      P.bindLoadViews(el);
       P.$$('[data-del-srpe]', el).forEach(function (b) {
         b.addEventListener('click', async function () {
           if (!confirm('Delete this session?')) return;
@@ -197,22 +238,16 @@
     },
     profile: function (el) {
       var p = me.profile;
-      function f(name, label, type) { return '<label>' + label + '<input name="' + name + '" type="' + (type || 'text') + '" value="' + esc(p[name]) + '"></label>'; }
-      el.innerHTML = '<h2>My profile</h2><form id="pf" class="inline-form">' +
-        f('full_name', 'Full name') + '<label>Email<input value="' + esc(p.email) + '" disabled></label>' + f('phone', 'Phone', 'tel') + f('sport', 'Sport') +
-        f('birth_year', 'Birth year', 'number') + f('height_cm', 'Height (cm)', 'number') +
-        '<label class="wide">My goals<textarea name="goals" rows="2">' + esc(p.goals) + '</textarea></label>' +
-        '<label class="wide">Injuries or health notes<textarea name="injuries" rows="2">' + esc(p.injuries) + '</textarea></label>' +
+      el.innerHTML = '<h2>My profile</h2>' + P.profileSummary(p) + '<form id="pf" class="inline-form">' + P.profileFields(p) +
         '<div><button class="btn btn-solid btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form>' +
         '<h3>Change password</h3><form id="pw" class="inline-form"><label>New password<input name="pw" type="password" minlength="8" autocomplete="new-password" required></label>' +
         '<div><button class="btn btn-line btn-small" type="submit">Change</button> <span class="status" role="status"></span></div></form>';
       P.$('#pf').addEventListener('submit', async function (e) {
         e.preventDefault(); var f = e.target, st = P.$('.status', f);
-        var row = { full_name: f.full_name.value, phone: f.phone.value || null, sport: f.sport.value || null, birth_year: f.birth_year.value ? +f.birth_year.value : null,
-          height_cm: f.height_cm.value ? +f.height_cm.value : null, goals: f.goals.value || null, injuries: f.injuries.value || null };
+        var row = P.readProfile(f);
         var r = await sb.from('profiles').update(row).eq('id', uid);
         if (r.error) return P.say(st, 'Could not save.', true);
-        Object.assign(me.profile, row); P.say(st, 'Saved');
+        Object.assign(me.profile, row); render.profile(el); P.say(P.$('#pf .status'), 'Saved');
       });
       P.$('#pw').addEventListener('submit', async function (e) {
         e.preventDefault(); var st = P.$('.status', e.target);
@@ -246,7 +281,10 @@
     },
     progress: function (el) {
       var by = {};
-      data.tests.forEach(function (a) { (by[a.name] = by[a.name] || []).push(a); });
+      // Weekly weigh-ins from the Nutrition section join the "Body mass" chart.
+      data.tests.concat(data.weights.map(function (w) { return { name: 'Body mass', measured_on: w.log_date, value: w.weight_kg, unit: 'kg', higher_is_better: false }; }))
+        .sort(function (a, b) { return a.measured_on < b.measured_on ? -1 : a.measured_on > b.measured_on ? 1 : 0; })
+        .forEach(function (a) { (by[a.name] = by[a.name] || []).push(a); });
       var names = Object.keys(by);
       el.innerHTML = '<h2>Progress</h2>' + (names.length ? '<div class="cards">' + names.map(function (n) {
         var pts = by[n].map(function (a) { return { date: a.measured_on, value: a.value }; });
@@ -277,6 +315,94 @@
       el.innerHTML = '<h2>Training calendar</h2><div class="cal-head"><button class="btn btn-line btn-small" data-m="-1" type="button" aria-label="Previous month">‹</button><strong>' +
         esc(m.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })) + '</strong><button class="btn btn-line btn-small" data-m="1" type="button" aria-label="Next month">›</button></div><div class="cal">' + cells + '</div>';
       P.$$('[data-m]', el).forEach(function (b) { b.addEventListener('click', function () { render.calendar(el, offset + Number(b.getAttribute('data-m'))); }); });
+    },
+    nutrition: function (el) {
+      var t = P.today();
+      // Suggest "end of week" when this week already has a start weigh-in without an end.
+      var lastStart = data.weights.slice().reverse().find(function (w) { return w.moment === 'week_start'; });
+      var guessEnd = lastStart && lastStart.log_date >= P.addDays(t, -7) && lastStart.log_date < t &&
+        !data.weights.some(function (w) { return w.moment === 'week_end' && w.log_date >= lastStart.log_date; });
+      el.innerHTML = '<h2>Nutrition</h2>' +
+        '<h3>From your coach</h3>' + P.nutritionPlans(data.nplans) +
+        '<h3>Weekly weigh-in</h3><p class="muted" style="margin-bottom:.75rem">Weigh yourself at the start and at the end of each week, in the morning before breakfast.</p>' +
+        '<form id="nw" class="inline-form"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -14) + '" max="' + t + '"></label>' +
+        '<label>Weigh-in<select name="moment"><option value="week_start"' + (guessEnd ? '' : ' selected') + '>Start of week</option><option value="week_end"' + (guessEnd ? ' selected' : '') + '>End of week</option></select></label>' +
+        '<label>Weight (kg)<input name="kg" type="number" step="0.1" min="20" max="300" required></label><label>Notes (optional)<input name="notes" maxlength="500"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Save weight</button> <span class="status" role="status"></span></div></form>' +
+        '<div id="nwh">' + P.weightHistory(data.weights, true) + '</div>' +
+        '<h3>Meal photos</h3><p class="muted" style="margin-bottom:.75rem">Take a photo of each plate before you eat. Your coach can comment on it.</p>' +
+        '<form id="nm" class="inline-form"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -7) + '" max="' + t + '"></label>' +
+        '<label>Meal<select name="meal">' + P.MEALS.map(function (m) { return '<option value="' + m[0] + '">' + m[1] + '</option>'; }).join('') + '</select></label>' +
+        '<label>Photo<input name="photo" type="file" accept="image/*" multiple required></label><label>Notes (optional)<input name="notes" maxlength="500" placeholder="What is on the plate, portion…"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Send photo</button> <span class="status" role="status"></span></div></form>' +
+        P.mealGallery(data.meals, 'client') +
+        '<h3>My supplements</h3>' +
+        '<form id="ns" class="inline-form"><label>Supplement<input name="name" required maxlength="120" placeholder="Creatine, whey, vitamin D…"></label>' +
+        '<label>Dose<input name="dose" maxlength="120" placeholder="5 g"></label><label>When<input name="timing" maxlength="120" placeholder="After training"></label>' +
+        '<label>Photo of the product (optional)<input name="photo" type="file" accept="image/*"></label><label class="wide">Notes (optional)<input name="notes" maxlength="500" placeholder="Brand, why you take it"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Add supplement</button> <span class="status" role="status"></span></div></form>' +
+        P.supplementList(data.supps, true);
+      function form(id, fn) {
+        var f = P.$(id, el);
+        f.addEventListener('submit', async function (e) {
+          e.preventDefault(); var st = P.$('.status', f), btn = P.$('button[type=submit]', f);
+          P.say(st, 'Saving…'); btn.disabled = true;
+          try { await fn(f); render.nutrition(el); P.say(P.$(id + ' .status', el), 'Saved'); }
+          catch (err) { P.say(st, 'Could not save. ' + (err.message || ''), true); btn.disabled = false; }
+        });
+      }
+      form('#nw', async function (f) {
+        var row = P.must(await sb.from('weight_logs').upsert({ client_id: uid, log_date: f.elements.date.value, moment: f.elements.moment.value, weight_kg: +f.elements.kg.value,
+          notes: f.elements.notes.value.trim() || null }, { onConflict: 'client_id,log_date,moment' }).select().single());
+        data.weights = sortWeights(data.weights.filter(function (w) { return w.id !== row.id; }).concat(row));
+      });
+      form('#nm', async function (f) {
+        var files = Array.prototype.slice.call(f.elements.photo.files);
+        for (var i = 0; i < files.length; i++) {
+          var path = await uploadPhoto(files[i]);
+          var r = await sb.from('meal_photos').insert({ client_id: uid, meal_date: f.elements.date.value, meal: f.elements.meal.value, photo_path: path, notes: f.elements.notes.value.trim() || null }).select().single();
+          if (r.error) { await sb.storage.from('client-files').remove([path]); throw r.error; }
+          data.meals.unshift(r.data);
+        }
+      });
+      form('#ns', async function (f) {
+        var file = f.elements.photo.files[0], path = file ? await uploadPhoto(file) : null;
+        var r = await sb.from('supplements').insert({ client_id: uid, name: f.elements.name.value.trim(), dose: f.elements.dose.value.trim() || null, timing: f.elements.timing.value.trim() || null,
+          notes: f.elements.notes.value.trim() || null, photo_path: path }).select().single();
+        if (r.error) { if (path) await sb.storage.from('client-files').remove([path]); throw r.error; }
+        data.supps.unshift(r.data);
+      });
+      function onClick(attr, fn) {
+        P.$$('[' + attr + ']', el).forEach(function (b) {
+          b.addEventListener('click', async function () {
+            try { if (await fn(b, b.getAttribute(attr)) !== false) render.nutrition(el); } catch (err) { alert('Could not save: ' + (err.message || err)); }
+          });
+        });
+      }
+      onClick('data-del-weight', async function (b, id) {
+        if (!confirm('Delete this weigh-in?')) return false;
+        P.must(await sb.from('weight_logs').delete().eq('id', id));
+        data.weights = data.weights.filter(function (w) { return String(w.id) !== id; });
+      });
+      onClick('data-del-meal', async function (b, id) {
+        if (!confirm('Delete this photo?')) return false;
+        P.must(await sb.from('meal_photos').delete().eq('id', id));
+        await sb.storage.from('client-files').remove([b.getAttribute('data-path')]);
+        data.meals = data.meals.filter(function (m) { return String(m.id) !== id; });
+      });
+      onClick('data-supp-toggle', async function (b, id) {
+        var on = b.getAttribute('data-on') !== '1';
+        P.must(await sb.from('supplements').update({ active: on }).eq('id', id));
+        data.supps.forEach(function (s) { if (String(s.id) === id) s.active = on; });
+      });
+      onClick('data-del-supp', async function (b, id) {
+        if (!confirm('Delete this supplement?')) return false;
+        P.must(await sb.from('supplements').delete().eq('id', id));
+        if (b.getAttribute('data-path')) await sb.storage.from('client-files').remove([b.getAttribute('data-path')]);
+        data.supps = data.supps.filter(function (s) { return String(s.id) !== id; });
+      });
+      P.bindFileLinks(el);
+      P.loadPhotos(el);
     },
     documents: function (el) {
       var label = { program: 'Programme', report: 'Report', assessment: 'Assessment', photo: 'Photo', other: 'Document' };

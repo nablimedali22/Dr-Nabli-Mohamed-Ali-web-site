@@ -41,6 +41,7 @@
     });
   }
   var DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];  // profiles.available_days values
   var CATS = [['strength', 'Strength & hypertrophy'], ['speed', 'Speed & acceleration'], ['power', 'Jumping & power'],
     ['conditioning', 'Conditioning'], ['core', 'Core & injury prevention'], ['mobility', 'Mobility & recovery']];
   function catName(id) { var c = CATS.find(function (x) { return x[0] === id; }); return c ? c[1] : id; }
@@ -92,22 +93,13 @@
 
   var render = {
     profile: async function (el) {
-      var c = cur;
-      function f(n, l, t) { return '<label>' + l + '<input name="' + n + '" type="' + (t || 'text') + '" value="' + esc(c[n]) + '"></label>'; }
-      el.innerHTML = '<form class="inline-form">' + f('full_name', 'Full name') + '<label>Email<input value="' + esc(c.email) + '" disabled></label>' +
-        f('phone', 'Phone', 'tel') + f('sport', 'Sport') + f('birth_year', 'Birth year', 'number') + f('height_cm', 'Height (cm)', 'number') +
-        '<label class="wide">Goals<textarea name="goals" rows="2">' + esc(c.goals) + '</textarea></label>' +
-        '<label class="wide">Injuries or health notes<textarea name="injuries" rows="2">' + esc(c.injuries) + '</textarea></label>' +
-        '<label class="wide">Exercises to avoid (one per line, checked when you assign a program)<textarea name="restrictions" rows="2" placeholder="Depth jump&#10;Overhead press">' + esc(c.restrictions) + '</textarea></label>' +
-        '<fieldset class="wide days"><legend>Available days</legend>' + DAYS.map(function (d, i) {
-          return '<label class="check"><input type="checkbox" name="day" value="' + i + '"' + ((c.availability || []).indexOf(i) >= 0 ? ' checked' : '') + '> ' + d + '</label>';
-        }).join('') + '</fieldset>' +
-        '<label class="check"><input type="checkbox" name="active"' + (c.active ? ' checked' : '') + '> Account active (untick to pause access)</label>' +
+      el.innerHTML = P.profileSummary(cur) + '<form class="inline-form">' + P.profileFields(cur) +
+        '<label class="wide">Exercises to avoid in programs (coach only, one per line, checked when you assign a program)<textarea name="restrictions" rows="2" placeholder="Depth jump&#10;Overhead press">' + esc(cur.restrictions) + '</textarea></label>' +
+        '<label class="check wide"><input type="checkbox" name="active"' + (cur.active ? ' checked' : '') + '> Account active (untick to pause access)</label>' +
         '<div><button class="btn btn-solid btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form>';
       onSubmit(P.$('form', el), async function (f) {
-        var row = { full_name: val(f, 'full_name') || '', phone: val(f, 'phone'), sport: val(f, 'sport'), birth_year: val(f, 'birth_year') && +val(f, 'birth_year'),
-          height_cm: val(f, 'height_cm') && +val(f, 'height_cm'), goals: val(f, 'goals'), injuries: val(f, 'injuries'), restrictions: val(f, 'restrictions'),
-          availability: P.$$('[name=day]:checked', f).map(function (x) { return +x.value; }), active: f.elements.active.checked };
+        var row = P.readProfile(f);
+        row.restrictions = val(f, 'restrictions'); row.active = f.elements.active.checked;
         P.must(await sb.from('profiles').update(row).eq('id', cur.id));
         Object.assign(cur, row); P.$('#client-name').textContent = cur.full_name || cur.email; await loadClients();
       });
@@ -217,7 +209,7 @@
             (s.focus ? '<p class="muted">' + esc(s.focus) + '</p>' : '') +
             (ex.length ? '<p style="font-size:.92rem;margin-top:.3rem">' + ex.map(function (e) { return esc(e.name) + (e.sets ? ' ' + esc(e.sets) + '×' + esc(e.reps || '') : '') + (e.load ? ' @ ' + esc(e.load) : '') + (e.target_rpe ? ' RPE ' + esc(e.target_rpe) : '') + loggedSets(e); }).join(' · ') + '</p>' : '') +
             (s.pdf_path ? '<p><a href="#" data-file="' + esc(s.pdf_path) + '">Programme PDF</a></p>' : '') +
-            (s.client_rpe || s.client_feedback ? '<p style="margin-top:.4rem"><strong>Client:</strong> ' + (s.client_rpe ? 'RPE ' + esc(s.client_rpe) + '. ' : '') + esc(s.client_feedback || '') + '</p>' : '') + '</li>';
+            (s.client_rpe != null || s.client_feedback ? '<p style="margin-top:.4rem"><strong>Client:</strong> ' + (s.client_rpe != null ? 'RPE ' + esc(s.client_rpe) + '. ' : '') + esc(s.client_feedback || '') + '</p>' : '') + '</li>';
         }).join('') + '</ul>' : empty('No sessions yet.'));
       P.$('#add-ex').addEventListener('click', function () { P.$('.ex-rows', el).insertAdjacentHTML('beforeend', exRow()); });
       onSubmit(P.$('form', el), async function (f) {
@@ -253,7 +245,8 @@
     },
     load: async function (el) {
       var list = await rows('srpe_entries', 'session_date', true);
-      el.innerHTML = '<p class="muted" style="margin-bottom:1rem">Session RPE (CR-10) × duration, logged by the client. ACWR = last 7 days ÷ weekly average of the last 28 days.</p>' + P.srpeHistory(list, 'all');
+      el.innerHTML = '<p class="muted" style="margin-bottom:1rem">Session RPE (CR-10) × duration, logged by the client: their own sessions (team training, self-training…) and the programme sessions they rated with a duration. Daily load = total of the day\'s sessions. ACWR = last 7 days ÷ weekly average of the last 28 days.</p>' + P.srpeHistory(list, 'all');
+      P.bindLoadViews(el);
       P.$$('[data-del-srpe]', el).forEach(function (b) {
         b.addEventListener('click', async function () {
           if (!confirm('Delete this session?')) return;
@@ -261,6 +254,48 @@
           catch (err) { alert('Could not delete: ' + (err.message || err)); }
         });
       });
+    },
+    nutrition: async function (el) {
+      var r = await Promise.all([rows('nutrition_plans', 'created_at'), rows('weight_logs', 'log_date', true), rows('supplements', 'created_at'), rows('meal_photos', 'created_at')]);
+      var plans = r[0], weights = r[1].sort(function (x, y) { return x.log_date < y.log_date ? -1 : x.log_date > y.log_date ? 1 : x.moment === 'week_start' ? -1 : 1; });
+      el.innerHTML = '<h3 style="margin-top:0">Send a programme or recommendation</h3>' +
+        '<form class="inline-form" id="np"><label>Type<select name="kind"><option value="programme">Nutrition programme</option><option value="recommendation">Recommendation</option></select></label>' +
+        '<label class="wide">Title<input name="title" required maxlength="200" placeholder="Meal plan, week 1 · Hydration on match day"></label>' +
+        '<label class="wide">Text<textarea name="body" rows="5" maxlength="10000" placeholder="Meals, quantities, timing, advice…"></textarea></label>' +
+        '<label>File (optional)<input name="file" type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Send to client</button> <span class="status" role="status"></span></div></form>' +
+        P.nutritionPlans(plans, true) +
+        '<h3>Weekly weigh-ins</h3>' + P.weightHistory(weights, 'all') +
+        '<h3>Supplements</h3>' + P.supplementList(r[2], false) +
+        '<h3>Meal photos</h3>' + P.mealGallery(r[3], 'coach');
+      onSubmit(P.$('#np', el), async function (f) {
+        var file = f.elements.file.files[0], path = file ? await upload(file) : null;
+        P.must(await sb.from('nutrition_plans').insert({ client_id: cur.id, kind: val(f, 'kind'), title: val(f, 'title').trim(), body: val(f, 'body'), file_path: path }));
+      });
+      P.$$('form.meal-comment', el).forEach(function (f) {
+        f.addEventListener('submit', async function (e) {
+          e.preventDefault(); var st = P.$('.status', f);
+          var res = await sb.from('meal_photos').update({ coach_comment: f.elements.c.value.trim() || null }).eq('id', f.getAttribute('data-id'));
+          P.say(st, res.error ? 'Could not save.' : 'Saved', !!res.error);
+        });
+      });
+      function del(attr, table, msg) {
+        P.$$('[' + attr + ']', el).forEach(function (b) {
+          b.addEventListener('click', async function () {
+            if (!confirm(msg)) return;
+            try {
+              P.must(await sb.from(table).delete().eq('id', b.getAttribute(attr)));
+              await removeFile(b.getAttribute('data-path'));
+              showPanel();
+            } catch (err) { alert('Could not delete: ' + (err.message || err)); }
+          });
+        });
+      }
+      del('data-del-plan', 'nutrition_plans', 'Delete this programme or recommendation?');
+      del('data-del-weight', 'weight_logs', 'Delete this weigh-in?');
+      del('data-del-meal', 'meal_photos', 'Delete this meal photo?');
+      P.bindFileLinks(el);
+      P.loadPhotos(el);
     },
     tests: async function (el) {
       var list = await rows('assessments', 'measured_on');
@@ -477,7 +512,7 @@
     return out.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
   }
   function assignWarnings(c, p, plan) {
-    var av = c.availability || [], out = [];
+    var av = (c.available_days || []).map(function (k) { return DAY_KEYS.indexOf(k); }).filter(function (i) { return i >= 0; }), out = [];
     var off = Array.from(new Set(plan.filter(function (x) { return av.length && av.indexOf(x.day) < 0; }).map(function (x) { return DAYS[x.day]; })));
     if (off.length) out.push('<span class="flag warn">Not available on ' + off.join(', ') + '</span>');
     var names = [];
@@ -508,7 +543,7 @@
   }
   async function showLibrary(editId) {
     var el = openArea('#library-area', 'Session library'); el.innerHTML = '<p class="muted">Loading…</p>';
-    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">The library could not be loaded. Has 05-library-programs.sql been run in Supabase?</p>'; return; }
+    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">The library could not be loaded. Has 09-library-programs.sql been run in Supabase?</p>'; return; }
     var t = editId ? tpl(editId) : null, ex = t ? t.template_exercises : [];
     var list = lib.templates.filter(function (x) { return !libCat || x.category === libCat; });
     el.innerHTML = '<datalist id="lib-ex">' + lib.exercises.map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
@@ -605,7 +640,7 @@
 
   async function showPrograms(editId) {
     var el = openArea('#programs-area', 'Programs'); el.innerHTML = '<p class="muted">Loading…</p>';
-    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">Programs could not be loaded. Has 05-library-programs.sql been run in Supabase?</p>'; return; }
+    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">Programs could not be loaded. Has 09-library-programs.sql been run in Supabase?</p>'; return; }
     var assigned = P.must(await sb.from('program_assignments').select('program_id, client_id'));
     var p = editId ? lib.programs.find(function (x) { return x.id === editId; }) : null;
     var rowsP = p ? p.program_sessions : [];
