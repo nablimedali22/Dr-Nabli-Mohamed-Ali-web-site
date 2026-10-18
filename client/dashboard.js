@@ -151,22 +151,16 @@
     },
     profile: function (el) {
       var p = me.profile;
-      function f(name, label, type) { return '<label>' + label + '<input name="' + name + '" type="' + (type || 'text') + '" value="' + esc(p[name]) + '"></label>'; }
-      el.innerHTML = '<h2>My profile</h2><form id="pf" class="inline-form">' +
-        f('full_name', 'Full name') + '<label>Email<input value="' + esc(p.email) + '" disabled></label>' + f('phone', 'Phone', 'tel') + f('sport', 'Sport') +
-        f('birth_year', 'Birth year', 'number') + f('height_cm', 'Height (cm)', 'number') +
-        '<label class="wide">My goals<textarea name="goals" rows="2">' + esc(p.goals) + '</textarea></label>' +
-        '<label class="wide">Injuries or health notes<textarea name="injuries" rows="2">' + esc(p.injuries) + '</textarea></label>' +
+      el.innerHTML = '<h2>My profile</h2>' + P.profileSummary(p) + '<form id="pf" class="inline-form">' + P.profileFields(p) +
         '<div><button class="btn btn-solid btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form>' +
         '<h3>Change password</h3><form id="pw" class="inline-form"><label>New password<input name="pw" type="password" minlength="8" autocomplete="new-password" required></label>' +
         '<div><button class="btn btn-line btn-small" type="submit">Change</button> <span class="status" role="status"></span></div></form>';
       P.$('#pf').addEventListener('submit', async function (e) {
         e.preventDefault(); var f = e.target, st = P.$('.status', f);
-        var row = { full_name: f.full_name.value, phone: f.phone.value || null, sport: f.sport.value || null, birth_year: f.birth_year.value ? +f.birth_year.value : null,
-          height_cm: f.height_cm.value ? +f.height_cm.value : null, goals: f.goals.value || null, injuries: f.injuries.value || null };
+        var row = P.readProfile(f);
         var r = await sb.from('profiles').update(row).eq('id', uid);
         if (r.error) return P.say(st, 'Could not save.', true);
-        Object.assign(me.profile, row); P.say(st, 'Saved');
+        Object.assign(me.profile, row); render.profile(el); P.say(P.$('#pf .status'), 'Saved');
       });
       P.$('#pw').addEventListener('submit', async function (e) {
         e.preventDefault(); var st = P.$('.status', e.target);
