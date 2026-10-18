@@ -10,12 +10,16 @@
 /* login page: intake form downloads beside the login card */
 .auth-grid{display:grid;grid-template-columns:minmax(0,30rem) minmax(0,22rem);gap:2rem 3rem;align-items:start}
 @media (max-width:52rem){.auth-grid{grid-template-columns:minmax(0,30rem)}}
-.intake-card{border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:6px;padding:1.5rem;margin-top:2rem;background:var(--bg)}
-.intake-card .eyebrow{margin:0 0 .25rem}
-.intake-card h2{margin:0 0 .6rem;font-size:1.6rem}
-.intake-card p{font-size:.95rem}
-.intake-list{list-style:none;margin:1rem 0;padding:0;display:flex;flex-direction:column;gap:.5rem}
-.intake-list a{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.7rem .9rem;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink);text-decoration:none;font-weight:600}
+.intake-card{border:1px solid var(--line);border-radius:8px;margin-top:2rem;background:var(--surface)}
+.intake-card summary{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;cursor:pointer;list-style:none;font-weight:600}
+.intake-card summary::-webkit-details-marker{display:none}
+.intake-icon{display:grid;place-items:center;width:2.2rem;height:2.2rem;border-radius:50%;background:var(--bg);color:var(--accent);flex:none}
+.intake-title{flex:1}
+.intake-chev{font-size:1.5rem;line-height:1;color:var(--muted);transition:transform .15s}
+.intake-card[open] .intake-chev{transform:rotate(90deg)}
+.intake-body{padding:0 1rem 1rem}
+.intake-list{list-style:none;margin:0 0 .6rem;padding:0;display:flex;flex-direction:column;gap:.4rem}
+.intake-list a{display:flex;align-items:center;gap:1rem;padding:.55rem .8rem;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);text-decoration:none;font-weight:600}
 .intake-list a::after{content:"↓";color:var(--accent);font-weight:700}
 .intake-list a:hover{border-color:var(--accent)}
 .intake-meta{margin-inline-start:auto;font-family:var(--mono);font-size:.72rem;font-weight:400;color:var(--muted)}
