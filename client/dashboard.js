@@ -22,7 +22,8 @@
       q('supplements', '*', 'created_at'),
       q('meal_photos', '*', 'created_at')
     ]);
-    r.forEach(function (x) { if (x.error) throw x.error; });
+    // Nutrition tables (07-nutrition.sql) may not exist yet: show them empty instead of breaking the dashboard.
+    r.forEach(function (x, i) { if (x.error) { if (i < 8) throw x.error; x.data = []; } });
     data = { plans: r[0].data, sessions: r[1].data, tests: r[2].data, notes: r[3].data, docs: r[4].data, msgs: r[5].data, wellness: r[6].data, srpe: r[7].data,
       nplans: r[8].data, weights: sortWeights(r[9].data), supps: r[10].data, meals: r[11].data };
     data.sessions.forEach(function (s) { (s.session_exercises || []).sort(function (a, b) { return a.position - b.position; }); });
