@@ -16,10 +16,14 @@
 <nav aria-label="Main"><a href="../index.html">Website</a><a href="../coaching.html">Coaching</a><a href="../contact.html">Contact</a></nav>
 </div></header>
 <main>
-<section><div class="wrap narrow">
+<section><div class="wrap">
+<div class="narrow">
 <p class="eyebrow">Coaching · Client Space</p>
 <h1>Log in</h1>
 <p class="lede">Your training programme, tests, progress and messages with your coach, in one private place.</p>
+</div>
+<div class="auth-grid">
+<div>
 <div class="auth-card">
 <form id="login" class="form">
 <label for="email">Email</label><input id="email" type="email" autocomplete="email" required>
@@ -30,6 +34,19 @@
 <div class="auth-links"><a href="forgot.html">Forgot your password?</a><a href="../contact.html">No account yet? Contact me</a></div>
 </div>
 <p class="muted" style="margin-top:1.5rem">Accounts are created by your coach. There is no public sign-up.</p>
+</div>
+<aside class="intake-card" aria-labelledby="intake-title">
+<p class="eyebrow">New client</p>
+<h2 id="intake-title">Intake form</h2>
+<p>Before your first session, download the form in your language, fill it in on your phone or computer, then send it back to me by <a href="mailto:nablimedali@live.fr">email</a> or <a href="https://wa.me/97466521377">WhatsApp</a>.</p>
+<ul class="intake-list">
+<li><a href="../forms/client-intake-form-en.pdf" download lang="en"><span class="intake-lang">English</span><span class="intake-meta">PDF · 3 pages</span></a></li>
+<li><a href="../forms/client-intake-form-fr.pdf" download lang="fr"><span class="intake-lang">Français</span><span class="intake-meta">PDF · 3 pages</span></a></li>
+<li><a href="../forms/client-intake-form-ar.pdf" download lang="ar" dir="rtl"><span class="intake-lang">العربية</span><span class="intake-meta">3 صفحات · <bdi>PDF</bdi></span></a></li>
+</ul>
+<p class="muted intake-note">The boxes are fillable. Everything you write stays confidential.</p>
+</aside>
+</div>
 </div></section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
