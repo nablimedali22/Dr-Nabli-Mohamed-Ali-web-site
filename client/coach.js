@@ -66,17 +66,12 @@
 
   var render = {
     profile: async function (el) {
-      var c = cur;
-      function f(n, l, t) { return '<label>' + l + '<input name="' + n + '" type="' + (t || 'text') + '" value="' + esc(c[n]) + '"></label>'; }
-      el.innerHTML = '<form class="inline-form">' + f('full_name', 'Full name') + '<label>Email<input value="' + esc(c.email) + '" disabled></label>' +
-        f('phone', 'Phone', 'tel') + f('sport', 'Sport') + f('birth_year', 'Birth year', 'number') + f('height_cm', 'Height (cm)', 'number') +
-        '<label class="wide">Goals<textarea name="goals" rows="2">' + esc(c.goals) + '</textarea></label>' +
-        '<label class="wide">Injuries or health notes<textarea name="injuries" rows="2">' + esc(c.injuries) + '</textarea></label>' +
-        '<label class="check"><input type="checkbox" name="active"' + (c.active ? ' checked' : '') + '> Account active (untick to pause access)</label>' +
+      el.innerHTML = P.profileSummary(cur) + '<form class="inline-form">' + P.profileFields(cur) +
+        '<label class="check wide"><input type="checkbox" name="active"' + (cur.active ? ' checked' : '') + '> Account active (untick to pause access)</label>' +
         '<div><button class="btn btn-solid btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form>';
       onSubmit(P.$('form', el), async function (f) {
-        var row = { full_name: val(f, 'full_name') || '', phone: val(f, 'phone'), sport: val(f, 'sport'), birth_year: val(f, 'birth_year') && +val(f, 'birth_year'),
-          height_cm: val(f, 'height_cm') && +val(f, 'height_cm'), goals: val(f, 'goals'), injuries: val(f, 'injuries'), active: f.elements.active.checked };
+        var row = P.readProfile(f);
+        row.active = f.elements.active.checked;
         P.must(await sb.from('profiles').update(row).eq('id', cur.id));
         Object.assign(cur, row); P.$('#client-name').textContent = cur.full_name || cur.email; await loadClients();
       });

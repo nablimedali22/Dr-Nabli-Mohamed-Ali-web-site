@@ -177,9 +177,106 @@
     return cards + chart + '<h3>Sessions</h3>' + table;
   }
 
+  // ---- Client profile (intake form): one definition shared by the coach and client pages ----
+  function opts(s) { return s.split('|').map(function (x) { var p = x.split(':'); return [p[0], p[1] || p[0]]; }); }
+  var YESNO = opts('yes:Yes|no:No');
+  var PROFILE = [
+    ['Personal information', [
+      { n: 'full_name', l: 'Full name' }, { n: 'email', l: 'Email', ro: true }, { n: 'birth_date', l: 'Date of birth', t: 'date' },
+      { n: 'sex', l: 'Sex', t: 'select', o: opts('male:Male|female:Female') }, { n: 'phone', l: 'Phone', t: 'tel' },
+      { n: 'city', l: 'City / country' }, { n: 'occupation', l: 'Occupation' }, { n: 'emergency_contact', l: 'Emergency contact (name and phone)', wide: true }]],
+    ['Physical and sport profile', [
+      { n: 'height_cm', l: 'Height (cm)', t: 'number', step: '0.1' }, { n: 'weight_kg', l: 'Weight (kg)', t: 'number', step: '0.1' },
+      { n: 'sport', l: 'Main sport or activity' }, { n: 'club_position', l: 'Club / team and position' },
+      { n: 'level', l: 'Current level', t: 'select', o: opts('beginner:Beginner|intermediate:Intermediate|advanced:Advanced|elite:Competitive / elite') },
+      { n: 'dominant_side', l: 'Dominant side', t: 'select', o: opts('right:Right|left:Left') }]],
+    ['Goals', [
+      { n: 'main_goals', l: 'Main goals', t: 'multi', o: opts('fat_loss:Fat loss|muscle_gain:Muscle gain|strength:Strength|endurance:Endurance|speed_power:Speed / power|performance:Sport performance|return_injury:Return from injury|health:General health') },
+      { n: 'goals', l: 'Specific goal and deadline', t: 'area' }, { n: 'next_competition', l: 'Next competition or event (and date)', wide: true },
+      { n: 'success_definition', l: 'What would make this programme a success?', t: 'area' }]],
+    ['Training history', [
+      { n: 'training_since', l: 'Training regularly for' }, { n: 'sessions_per_week', l: 'Sessions per week now', t: 'number', step: '1' },
+      { n: 'recent_training', l: 'Recent training', t: 'multi', o: opts('weights:Weight training|cardio:Running / cardio|team_sport:Team sport|combat:Combat sport|flexibility:Flexibility / yoga|none:None') },
+      { n: 'previous_coach', l: 'Worked with a coach before? What worked, what did not?', t: 'area' },
+      { n: 'best_results', l: 'Best recent results or tests (loads, run times, jumps…)', t: 'area' }]],
+    ['Health, injuries and limits', [
+      { n: 'current_pain', l: 'Current pain or injury (where?)', t: 'area' }, { n: 'injuries', l: 'Past injuries or surgery (with dates)', t: 'area' },
+      { n: 'chronic_conditions', l: 'Chronic conditions (heart, blood pressure, asthma, diabetes…)', t: 'area' },
+      { n: 'medications', l: 'Regular medication', t: 'area' }, { n: 'movements_to_avoid', l: 'Exercises or movements to avoid', t: 'area' },
+      { n: 'doctor_no_exercise', l: 'Ever advised by a doctor not to exercise?', t: 'yesno' },
+      { n: 'chest_pain', l: 'Chest pain, dizziness or fainting during effort?', t: 'yesno' },
+      { n: 'pregnant', l: 'Pregnant or recently given birth?', t: 'select', o: opts('yes:Yes|no:No|na:Not applicable') }]],
+    ['Availability and organisation', [
+      { n: 'available_days', l: 'Available days', t: 'multi', o: opts('mon:Monday|tue:Tuesday|wed:Wednesday|thu:Thursday|fri:Friday|sat:Saturday|sun:Sunday') },
+      { n: 'preferred_time', l: 'Preferred time', t: 'multi', o: opts('morning:Morning|midday:Midday|evening:Evening') },
+      { n: 'session_minutes', l: 'Session length', t: 'select', num: true, o: opts('45:45 min|60:60 min|90:90 min') },
+      { n: 'training_format', l: 'Format', t: 'select', o: opts('in_person:In person|online:Online|both:Both') },
+      { n: 'training_location', l: 'Where will you train?', t: 'multi', o: opts('gym:Gym|home:Home|outdoors:Outdoors|club:Club') },
+      { n: 'equipment', l: 'Equipment available', t: 'area' }]],
+    ['Lifestyle', [
+      { n: 'sleep_hours', l: 'Average sleep per night (hours)', t: 'number', step: '0.5' },
+      { n: 'stress_level', l: 'Stress level', t: 'select', num: true, o: opts('1:1 (low)|2:2|3:3|4:4|5:5 (high)') },
+      { n: 'work_activity', l: 'Physical activity at work', t: 'select', o: opts('low:Low|moderate:Moderate|high:High') },
+      { n: 'smoker', l: 'Smoker', t: 'yesno' }, { n: 'diet_notes', l: 'Eating habits, diet or food allergies', t: 'area' }]],
+    ['Declaration and consent', [
+      { n: 'intake_date', l: 'Form filled in on', t: 'date' },
+      { n: 'consent', l: 'Agreed', t: 'multi', o: opts('accurate:The information above is true and complete|report:I will tell my coach about any change in health, pain or injury|store:I agree this information is kept in my Client Space') }]]
+  ];
+  function profileFields(p) {
+    function input(f) {
+      var v = p[f.n], name = ' name="' + f.n + '"', cls = f.wide ? ' class="wide"' : '';
+      if (f.ro) return '<label' + cls + '>' + f.l + '<input value="' + esc(v) + '" disabled></label>';
+      if (f.t === 'area') return '<label class="wide">' + f.l + '<textarea' + name + ' rows="2">' + esc(v) + '</textarea></label>';
+      if (f.t === 'multi') {
+        var on = v || [];
+        return '<fieldset class="wide choices"><legend>' + f.l + '</legend>' + f.o.map(function (o) {
+          return '<label class="check"><input type="checkbox"' + name + ' value="' + o[0] + '"' + (on.indexOf(o[0]) >= 0 ? ' checked' : '') + '> ' + esc(o[1]) + '</label>';
+        }).join('') + '</fieldset>';
+      }
+      if (f.t === 'select' || f.t === 'yesno') {
+        var cur = f.t === 'yesno' ? (v === true ? 'yes' : v === false ? 'no' : '') : (v == null ? '' : String(v));
+        return '<label' + cls + '>' + f.l + '<select' + name + '><option value="">—</option>' + (f.o || YESNO).map(function (o) {
+          return '<option value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        }).join('') + '</select></label>';
+      }
+      return '<label' + cls + '>' + f.l + '<input' + name + ' type="' + (f.t || 'text') + '"' + (f.step ? ' step="' + f.step + '" min="0"' : '') + ' value="' + esc(v) + '"></label>';
+    }
+    return PROFILE.map(function (s) { return '<h3>' + esc(s[0]) + '</h3>' + s[1].map(input).join(''); }).join('');
+  }
+  // Reads the profile form into a row for public.profiles (empty means null).
+  function readProfile(form) {
+    var row = {};
+    PROFILE.forEach(function (s) {
+      s[1].forEach(function (f) {
+        if (f.ro) return;
+        if (f.t === 'multi') {
+          var on = $$('input[name="' + f.n + '"]:checked', form).map(function (i) { return i.value; });
+          row[f.n] = on.length ? on : null; return;
+        }
+        var v = form.elements[f.n].value.trim();
+        row[f.n] = v === '' ? null : f.t === 'yesno' ? v === 'yes' : f.t === 'number' || f.num ? +v : v;
+      });
+    });
+    row.full_name = row.full_name || '';
+    row.birth_year = row.birth_date ? +row.birth_date.slice(0, 4) : null;
+    return row;
+  }
+  // "Age 21 · BMI 19.0" from the saved profile.
+  function profileSummary(p) {
+    var bits = [];
+    if (p.birth_date) {
+      var b = new Date(p.birth_date + 'T00:00:00'), n = new Date(), age = n.getFullYear() - b.getFullYear();
+      if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate())) age--;
+      bits.push('Age ' + age);
+    } else if (p.birth_year) bits.push('Age about ' + (new Date().getFullYear() - p.birth_year));
+    if (p.height_cm && p.weight_kg) bits.push('BMI ' + (p.weight_kg / Math.pow(p.height_cm / 100, 2)).toFixed(1));
+    return bits.length ? '<p class="muted">' + bits.join(' · ') + '</p>' : '';
+  }
+
   window.Portal = {
     ready: ready, sb: sb, esc: esc, fmtDate: fmtDate, fmtDateTime: fmtDateTime, today: today,
     $: $, $$: $$, say: say, must: must, requireUser: requireUser, notConfigured: notConfigured,
-    signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory
+    signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory,
+    profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary
   };
 })();
