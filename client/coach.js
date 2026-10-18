@@ -170,6 +170,48 @@
         });
       });
     },
+    nutrition: async function (el) {
+      var r = await Promise.all([rows('nutrition_plans', 'created_at'), rows('weight_logs', 'log_date', true), rows('supplements', 'created_at'), rows('meal_photos', 'created_at')]);
+      var plans = r[0], weights = r[1].sort(function (x, y) { return x.log_date < y.log_date ? -1 : x.log_date > y.log_date ? 1 : x.moment === 'week_start' ? -1 : 1; });
+      el.innerHTML = '<h3 style="margin-top:0">Send a programme or recommendation</h3>' +
+        '<form class="inline-form" id="np"><label>Type<select name="kind"><option value="programme">Nutrition programme</option><option value="recommendation">Recommendation</option></select></label>' +
+        '<label class="wide">Title<input name="title" required maxlength="200" placeholder="Meal plan, week 1 · Hydration on match day"></label>' +
+        '<label class="wide">Text<textarea name="body" rows="5" maxlength="10000" placeholder="Meals, quantities, timing, advice…"></textarea></label>' +
+        '<label>File (optional)<input name="file" type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Send to client</button> <span class="status" role="status"></span></div></form>' +
+        P.nutritionPlans(plans, true) +
+        '<h3>Weekly weigh-ins</h3>' + P.weightHistory(weights, 'all') +
+        '<h3>Supplements</h3>' + P.supplementList(r[2], false) +
+        '<h3>Meal photos</h3>' + P.mealGallery(r[3], 'coach');
+      onSubmit(P.$('#np', el), async function (f) {
+        var file = f.elements.file.files[0], path = file ? await upload(file) : null;
+        P.must(await sb.from('nutrition_plans').insert({ client_id: cur.id, kind: val(f, 'kind'), title: val(f, 'title').trim(), body: val(f, 'body'), file_path: path }));
+      });
+      P.$$('form.meal-comment', el).forEach(function (f) {
+        f.addEventListener('submit', async function (e) {
+          e.preventDefault(); var st = P.$('.status', f);
+          var res = await sb.from('meal_photos').update({ coach_comment: f.elements.c.value.trim() || null }).eq('id', f.getAttribute('data-id'));
+          P.say(st, res.error ? 'Could not save.' : 'Saved', !!res.error);
+        });
+      });
+      function del(attr, table, msg) {
+        P.$$('[' + attr + ']', el).forEach(function (b) {
+          b.addEventListener('click', async function () {
+            if (!confirm(msg)) return;
+            try {
+              P.must(await sb.from(table).delete().eq('id', b.getAttribute(attr)));
+              await removeFile(b.getAttribute('data-path'));
+              showPanel();
+            } catch (err) { alert('Could not delete: ' + (err.message || err)); }
+          });
+        });
+      }
+      del('data-del-plan', 'nutrition_plans', 'Delete this programme or recommendation?');
+      del('data-del-weight', 'weight_logs', 'Delete this weigh-in?');
+      del('data-del-meal', 'meal_photos', 'Delete this meal photo?');
+      P.bindFileLinks(el);
+      P.loadPhotos(el);
+    },
     tests: async function (el) {
       var list = await rows('assessments', 'measured_on');
       var names = Array.from(new Set(list.map(function (a) { return a.name; })));

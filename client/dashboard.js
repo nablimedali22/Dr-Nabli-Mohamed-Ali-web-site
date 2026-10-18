@@ -16,13 +16,27 @@
       q('documents', '*', 'created_at'),
       q('messages', '*', 'created_at', true),
       q('wellness_entries', '*', 'entry_date', true),
-      q('srpe_entries', '*', 'session_date', true)
+      q('srpe_entries', '*', 'session_date', true),
+      q('nutrition_plans', '*', 'created_at'),
+      q('weight_logs', '*', 'log_date', true),
+      q('supplements', '*', 'created_at'),
+      q('meal_photos', '*', 'created_at')
     ]);
     r.forEach(function (x) { if (x.error) throw x.error; });
-    data = { plans: r[0].data, sessions: r[1].data, tests: r[2].data, notes: r[3].data, docs: r[4].data, msgs: r[5].data, wellness: r[6].data, srpe: r[7].data };
+    data = { plans: r[0].data, sessions: r[1].data, tests: r[2].data, notes: r[3].data, docs: r[4].data, msgs: r[5].data, wellness: r[6].data, srpe: r[7].data,
+      nplans: r[8].data, weights: sortWeights(r[9].data), supps: r[10].data, meals: r[11].data };
     data.sessions.forEach(function (s) { (s.session_exercises || []).sort(function (a, b) { return a.position - b.position; }); });
   }
 
+  function sortWeights(a) { return a.sort(function (x, y) { return x.log_date < y.log_date ? -1 : x.log_date > y.log_date ? 1 : x.moment === 'week_start' ? -1 : 1; }); }
+  function safeName(n) { return n.normalize('NFKD').replace(/[^\w.\-]+/g, '_').slice(-60); }
+  // Photos go to <client id>/nutrition/, the only folder a client may upload to.
+  async function uploadPhoto(file) {
+    var blob = await P.compressImage(file), jpg = blob !== file;
+    var path = uid + '/nutrition/' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-' + safeName(jpg ? file.name.replace(/\.[^.]*$/, '') + '.jpg' : file.name);
+    P.must(await sb.storage.from('client-files').upload(path, blob, { contentType: jpg ? 'image/jpeg' : (file.type || undefined) }));
+    return path;
+  }
   function empty(t) { return '<p class="empty">' + esc(t) + '</p>'; }
   function exerciseTable(ex) {
     if (!ex || !ex.length) return '';
@@ -80,6 +94,10 @@
           return w ? '<span class="v">' + w.hooper + ' / 28</span><a href="#wellness">Update</a>' : '<span class="v">—</span><a href="#wellness">Log it now</a>';
         })() + '</div>' +
         '<div class="card"><span class="k">Training load, last 7 days</span><span class="v">' + P.loadMetrics(data.srpe).acute + ' AU</span><a href="#load">Log a session</a></div>' +
+        '<div class="card"><span class="k">Body weight</span>' + (function () {
+          var l = data.weights[data.weights.length - 1];
+          return l ? '<span class="v">' + esc(l.weight_kg) + ' kg</span><span class="muted">' + esc(P.MOMENTS[l.moment] + ', ' + P.fmtDate(l.log_date)) + '</span>' : '<span class="v">—</span>';
+        })() + '<a href="#nutrition">Weigh-in and meals</a></div>' +
         '<div class="card"><span class="k">New messages</span><span class="v">' + unread + '</span>' + (unread ? '<a href="#messages">Read them</a>' : '') + '</div></div>' +
         '<h2 style="margin-top:2rem">Today</h2>' + (todays.length ? '<ul class="list">' + todays.map(sessionCard).join('') + '</ul>' : empty('No session planned for today. Rest well.'));
       bindReports(el);
@@ -196,7 +214,10 @@
     },
     progress: function (el) {
       var by = {};
-      data.tests.forEach(function (a) { (by[a.name] = by[a.name] || []).push(a); });
+      // Weekly weigh-ins from the Nutrition section join the "Body mass" chart.
+      data.tests.concat(data.weights.map(function (w) { return { name: 'Body mass', measured_on: w.log_date, value: w.weight_kg, unit: 'kg', higher_is_better: false }; }))
+        .sort(function (a, b) { return a.measured_on < b.measured_on ? -1 : a.measured_on > b.measured_on ? 1 : 0; })
+        .forEach(function (a) { (by[a.name] = by[a.name] || []).push(a); });
       var names = Object.keys(by);
       el.innerHTML = '<h2>Progress</h2>' + (names.length ? '<div class="cards">' + names.map(function (n) {
         var pts = by[n].map(function (a) { return { date: a.measured_on, value: a.value }; });
@@ -227,6 +248,94 @@
       el.innerHTML = '<h2>Training calendar</h2><div class="cal-head"><button class="btn btn-line btn-small" data-m="-1" type="button" aria-label="Previous month">‹</button><strong>' +
         esc(m.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })) + '</strong><button class="btn btn-line btn-small" data-m="1" type="button" aria-label="Next month">›</button></div><div class="cal">' + cells + '</div>';
       P.$$('[data-m]', el).forEach(function (b) { b.addEventListener('click', function () { render.calendar(el, offset + Number(b.getAttribute('data-m'))); }); });
+    },
+    nutrition: function (el) {
+      var t = P.today();
+      // Suggest "end of week" when this week already has a start weigh-in without an end.
+      var lastStart = data.weights.slice().reverse().find(function (w) { return w.moment === 'week_start'; });
+      var guessEnd = lastStart && lastStart.log_date >= P.addDays(t, -7) && lastStart.log_date < t &&
+        !data.weights.some(function (w) { return w.moment === 'week_end' && w.log_date >= lastStart.log_date; });
+      el.innerHTML = '<h2>Nutrition</h2>' +
+        '<h3>From your coach</h3>' + P.nutritionPlans(data.nplans) +
+        '<h3>Weekly weigh-in</h3><p class="muted" style="margin-bottom:.75rem">Weigh yourself at the start and at the end of each week, in the morning before breakfast.</p>' +
+        '<form id="nw" class="inline-form"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -14) + '" max="' + t + '"></label>' +
+        '<label>Weigh-in<select name="moment"><option value="week_start"' + (guessEnd ? '' : ' selected') + '>Start of week</option><option value="week_end"' + (guessEnd ? ' selected' : '') + '>End of week</option></select></label>' +
+        '<label>Weight (kg)<input name="kg" type="number" step="0.1" min="20" max="300" required></label><label>Notes (optional)<input name="notes" maxlength="500"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Save weight</button> <span class="status" role="status"></span></div></form>' +
+        '<div id="nwh">' + P.weightHistory(data.weights, true) + '</div>' +
+        '<h3>Meal photos</h3><p class="muted" style="margin-bottom:.75rem">Take a photo of each plate before you eat. Your coach can comment on it.</p>' +
+        '<form id="nm" class="inline-form"><label>Date<input name="date" type="date" required value="' + t + '" min="' + P.addDays(t, -7) + '" max="' + t + '"></label>' +
+        '<label>Meal<select name="meal">' + P.MEALS.map(function (m) { return '<option value="' + m[0] + '">' + m[1] + '</option>'; }).join('') + '</select></label>' +
+        '<label>Photo<input name="photo" type="file" accept="image/*" multiple required></label><label>Notes (optional)<input name="notes" maxlength="500" placeholder="What is on the plate, portion…"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Send photo</button> <span class="status" role="status"></span></div></form>' +
+        P.mealGallery(data.meals, 'client') +
+        '<h3>My supplements</h3>' +
+        '<form id="ns" class="inline-form"><label>Supplement<input name="name" required maxlength="120" placeholder="Creatine, whey, vitamin D…"></label>' +
+        '<label>Dose<input name="dose" maxlength="120" placeholder="5 g"></label><label>When<input name="timing" maxlength="120" placeholder="After training"></label>' +
+        '<label>Photo of the product (optional)<input name="photo" type="file" accept="image/*"></label><label class="wide">Notes (optional)<input name="notes" maxlength="500" placeholder="Brand, why you take it"></label>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Add supplement</button> <span class="status" role="status"></span></div></form>' +
+        P.supplementList(data.supps, true);
+      function form(id, fn) {
+        var f = P.$(id, el);
+        f.addEventListener('submit', async function (e) {
+          e.preventDefault(); var st = P.$('.status', f), btn = P.$('button[type=submit]', f);
+          P.say(st, 'Saving…'); btn.disabled = true;
+          try { await fn(f); render.nutrition(el); P.say(P.$(id + ' .status', el), 'Saved'); }
+          catch (err) { P.say(st, 'Could not save. ' + (err.message || ''), true); btn.disabled = false; }
+        });
+      }
+      form('#nw', async function (f) {
+        var row = P.must(await sb.from('weight_logs').upsert({ client_id: uid, log_date: f.elements.date.value, moment: f.elements.moment.value, weight_kg: +f.elements.kg.value,
+          notes: f.elements.notes.value.trim() || null }, { onConflict: 'client_id,log_date,moment' }).select().single());
+        data.weights = sortWeights(data.weights.filter(function (w) { return w.id !== row.id; }).concat(row));
+      });
+      form('#nm', async function (f) {
+        var files = Array.prototype.slice.call(f.elements.photo.files);
+        for (var i = 0; i < files.length; i++) {
+          var path = await uploadPhoto(files[i]);
+          var r = await sb.from('meal_photos').insert({ client_id: uid, meal_date: f.elements.date.value, meal: f.elements.meal.value, photo_path: path, notes: f.elements.notes.value.trim() || null }).select().single();
+          if (r.error) { await sb.storage.from('client-files').remove([path]); throw r.error; }
+          data.meals.unshift(r.data);
+        }
+      });
+      form('#ns', async function (f) {
+        var file = f.elements.photo.files[0], path = file ? await uploadPhoto(file) : null;
+        var r = await sb.from('supplements').insert({ client_id: uid, name: f.elements.name.value.trim(), dose: f.elements.dose.value.trim() || null, timing: f.elements.timing.value.trim() || null,
+          notes: f.elements.notes.value.trim() || null, photo_path: path }).select().single();
+        if (r.error) { if (path) await sb.storage.from('client-files').remove([path]); throw r.error; }
+        data.supps.unshift(r.data);
+      });
+      function onClick(attr, fn) {
+        P.$$('[' + attr + ']', el).forEach(function (b) {
+          b.addEventListener('click', async function () {
+            try { if (await fn(b, b.getAttribute(attr)) !== false) render.nutrition(el); } catch (err) { alert('Could not save: ' + (err.message || err)); }
+          });
+        });
+      }
+      onClick('data-del-weight', async function (b, id) {
+        if (!confirm('Delete this weigh-in?')) return false;
+        P.must(await sb.from('weight_logs').delete().eq('id', id));
+        data.weights = data.weights.filter(function (w) { return String(w.id) !== id; });
+      });
+      onClick('data-del-meal', async function (b, id) {
+        if (!confirm('Delete this photo?')) return false;
+        P.must(await sb.from('meal_photos').delete().eq('id', id));
+        await sb.storage.from('client-files').remove([b.getAttribute('data-path')]);
+        data.meals = data.meals.filter(function (m) { return String(m.id) !== id; });
+      });
+      onClick('data-supp-toggle', async function (b, id) {
+        var on = b.getAttribute('data-on') !== '1';
+        P.must(await sb.from('supplements').update({ active: on }).eq('id', id));
+        data.supps.forEach(function (s) { if (String(s.id) === id) s.active = on; });
+      });
+      onClick('data-del-supp', async function (b, id) {
+        if (!confirm('Delete this supplement?')) return false;
+        P.must(await sb.from('supplements').delete().eq('id', id));
+        if (b.getAttribute('data-path')) await sb.storage.from('client-files').remove([b.getAttribute('data-path')]);
+        data.supps = data.supps.filter(function (s) { return String(s.id) !== id; });
+      });
+      P.bindFileLinks(el);
+      P.loadPhotos(el);
     },
     documents: function (el) {
       var label = { program: 'Programme', report: 'Report', assessment: 'Assessment', photo: 'Photo', other: 'Document' };
