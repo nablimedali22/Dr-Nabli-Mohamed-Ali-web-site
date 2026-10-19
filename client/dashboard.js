@@ -20,12 +20,13 @@
       q('nutrition_plans', '*', 'created_at'),
       q('weight_logs', '*', 'log_date', true),
       q('supplements', '*', 'created_at'),
-      q('meal_photos', '*', 'created_at')
+      q('meal_photos', '*', 'created_at'),
+      q('plan_weeks', '*', 'week_no', true)
     ]);
-    // Nutrition tables (07-nutrition.sql) may not exist yet: show them empty instead of breaking the dashboard.
+    // Nutrition (07-nutrition.sql) and weekly programme (09-plan-weeks.sql) tables may not exist yet: show them empty instead of breaking the dashboard.
     r.forEach(function (x, i) { if (x.error) { if (i < 8) throw x.error; x.data = []; } });
     data = { plans: r[0].data, sessions: r[1].data, tests: r[2].data, notes: r[3].data, docs: r[4].data, msgs: r[5].data, wellness: r[6].data, srpe: r[7].data,
-      nplans: r[8].data, weights: sortWeights(r[9].data), supps: r[10].data, meals: r[11].data };
+      nplans: r[8].data, weights: sortWeights(r[9].data), supps: r[10].data, meals: r[11].data, weeks: r[12].data };
     data.sessions.forEach(function (s) { (s.session_exercises || []).sort(function (a, b) { return a.position - b.position; }); });
   }
 
@@ -260,8 +261,9 @@
         return '<li><div class="row"><h3 style="margin:0">' + esc(p.title) + '</h3>' + (p.active ? '<span class="tag done">Current</span>' : '<span class="tag">Past</span>') + '</div>' +
           '<p class="date" style="margin-top:.25rem">' + esc(P.fmtDate(p.start_date)) + (p.end_date ? ' → ' + esc(P.fmtDate(p.end_date)) : '') + '</p>' +
           (p.goal ? '<p style="margin-top:.5rem"><strong>Goal:</strong> ' + esc(p.goal) + '</p>' : '') + (p.phase ? '<p><strong>Phase:</strong> ' + esc(p.phase) + '</p>' : '') +
-          (p.details ? '<p class="pre" style="margin-top:.5rem">' + esc(p.details) + '</p>' : '') + '</li>';
+          (p.details ? '<p class="pre" style="margin-top:.5rem">' + esc(p.details) + '</p>' : '') + P.planWeeks(p, data.weeks) + '</li>';
       }).join('') + '</ul>' : empty('Your coach has not added a plan yet.'));
+      P.bindFileLinks(el);
     },
     program: function (el) {
       var t = P.today();
@@ -407,6 +409,10 @@
     documents: function (el) {
       var label = { program: 'Programme', report: 'Report', assessment: 'Assessment', photo: 'Photo', other: 'Document' };
       var files = data.docs.slice();
+      data.weeks.forEach(function (w) {
+        var p = data.plans.find(function (x) { return x.id === w.plan_id; });
+        files.push({ title: 'Week ' + w.week_no + ' program' + (p ? ' (' + p.title + ')' : ''), kind: 'program', storage_path: w.storage_path, created_at: w.created_at });
+      });
       data.sessions.forEach(function (s) { if (s.pdf_path) files.push({ title: s.title + ' (' + P.fmtDate(s.session_date) + ')', kind: 'program', storage_path: s.pdf_path, created_at: s.created_at }); });
       el.innerHTML = '<h2>Documents and reports</h2>' + (files.length ? '<ul class="list">' + files.map(function (d) {
         return '<li class="row"><span><span class="tag">' + esc(label[d.kind] || 'Document') + '</span> <a href="#" data-file="' + esc(d.storage_path) + '">' + esc(d.title) + '</a></span><span class="date">' + esc(P.fmtDate(d.created_at)) + '</span></li>';

@@ -1,5 +1,5 @@
 -- Session library, training programs and set-by-set logging.
--- Run once in Supabase > SQL Editor (after 08-session-load.sql). Safe to run again.
+-- Run once in Supabase > SQL Editor (after 09-plan-weeks.sql). Safe to run again.
 --
 --   * exercise_library, session_templates and programs belong to the coach only.
 --   * Assigning a program copies its sessions into training_sessions for that

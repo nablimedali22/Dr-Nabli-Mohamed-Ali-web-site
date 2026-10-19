@@ -21,7 +21,8 @@
 <h1>Clients</h1>
 <div class="coach-layout" style="margin-top:1.5rem">
 <aside>
-<div class="coach-nav"><button id="go-team" type="button" class="btn btn-solid btn-small">Team dashboard</button>
+<div class="coach-nav"><button id="go-alerts" type="button" class="btn btn-solid btn-small">Needs attention</button>
+<button id="go-team" type="button" class="btn btn-line btn-small">Team dashboard</button>
 <button id="go-library" type="button" class="btn btn-line btn-small">Session library</button>
 <button id="go-programs" type="button" class="btn btn-line btn-small">Programs</button></div>
 <ul id="clients" class="client-list"></ul>
@@ -30,6 +31,7 @@
 </aside>
 <div>
 <h2 id="client-name" class="section-title">Choose a client</h2>
+<div id="alerts-area" hidden></div>
 <div id="team-area" hidden></div>
 <div id="library-area" hidden></div>
 <div id="programs-area" hidden></div>

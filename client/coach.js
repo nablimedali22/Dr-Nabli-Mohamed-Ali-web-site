@@ -71,7 +71,7 @@
     }).join('') : empty('No clients yet. See “How to add a client” below.');
     P.$$('[data-c]').forEach(function (b) { b.addEventListener('click', function () { select(b.getAttribute('data-c')); }); });
   }
-  var AREAS = ['#team-area', '#library-area', '#programs-area', '#client-area'];
+  var AREAS = ['#alerts-area', '#team-area', '#library-area', '#programs-area', '#client-area'];
   // Shows one coach-wide area (team, library, programs) instead of a client.
   function openArea(id, title) {
     cur = null;
@@ -105,7 +105,10 @@
       });
     },
     plan: async function (el) {
-      var plans = await rows('coaching_plans', 'start_date');
+      var plans = await rows('coaching_plans', 'start_date'), weeks = [];
+      // plan_weeks comes with 09-plan-weeks.sql: without it the plans still show, without week slots.
+      var wr = await sb.from('plan_weeks').select('*').eq('client_id', cur.id);
+      if (!wr.error) weeks = wr.data;
       el.innerHTML = '<form class="inline-form"><label class="wide">Plan title<input name="title" required placeholder="Pre-season 2026"></label>' +
         '<label>Start<input name="start_date" type="date" value="' + P.today() + '"></label><label>End<input name="end_date" type="date"></label>' +
         '<label>Phase<input name="phase" placeholder="General preparation"></label><label class="wide">Goal<input name="goal"></label>' +
@@ -118,7 +121,7 @@
             '<button class="link-btn danger" data-del="' + p.id + '">Delete</button></span></div>' +
             '<p class="date">' + esc(P.fmtDate(p.start_date)) + (p.end_date ? ' → ' + esc(P.fmtDate(p.end_date)) : '') + '</p>' +
             (p.goal ? '<p><strong>Goal:</strong> ' + esc(p.goal) + '</p>' : '') + (p.phase ? '<p><strong>Phase:</strong> ' + esc(p.phase) + '</p>' : '') +
-            (p.details ? '<p class="pre">' + esc(p.details) + '</p>' : '') + '</li>';
+            (p.details ? '<p class="pre">' + esc(p.details) + '</p>' : '') + (wr.error ? '' : P.planWeeks(p, weeks, true)) + '</li>';
         }).join('') + '</ul>' : empty('No plan yet.'));
       onSubmit(P.$('form', el), async function (f) {
         P.must(await sb.from('coaching_plans').insert({ client_id: cur.id, title: val(f, 'title'), start_date: val(f, 'start_date'), end_date: val(f, 'end_date'),
@@ -130,6 +133,27 @@
         });
       });
       onDelete(el, 'coaching_plans');
+      P.bindFileLinks(el);
+      // A week's file is uploaded as soon as it is picked; replacing one removes the old file.
+      P.$$('[data-week-up]', el).forEach(function (inp) {
+        inp.addEventListener('change', async function () {
+          var file = inp.files[0], k = inp.getAttribute('data-week-up').split(':'), old = inp.getAttribute('data-path');
+          if (!file) return;
+          try {
+            var path = await upload(file);
+            var r = await sb.from('plan_weeks').upsert({ plan_id: +k[0], client_id: cur.id, week_no: +k[1], file_name: file.name, storage_path: path }, { onConflict: 'plan_id,week_no' });
+            if (r.error) { await removeFile(path); throw r.error; }
+            await removeFile(old); showPanel();
+          } catch (err) { alert('Could not upload: ' + (err.message || err)); }
+        });
+      });
+      P.$$('[data-week-del]', el).forEach(function (b) {
+        b.addEventListener('click', async function () {
+          if (!confirm('Remove this week\'s programme?')) return;
+          try { P.must(await sb.from('plan_weeks').delete().eq('id', b.getAttribute('data-week-del'))); await removeFile(b.getAttribute('data-path')); showPanel(); }
+          catch (err) { alert('Could not remove: ' + (err.message || err)); }
+        });
+      });
     },
     program: async function (el) {
       await loadLib();
@@ -543,7 +567,7 @@
   }
   async function showLibrary(editId) {
     var el = openArea('#library-area', 'Session library'); el.innerHTML = '<p class="muted">Loading…</p>';
-    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">The library could not be loaded. Has 09-library-programs.sql been run in Supabase?</p>'; return; }
+    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">The library could not be loaded. Has 10-library-programs.sql been run in Supabase?</p>'; return; }
     var t = editId ? tpl(editId) : null, ex = t ? t.template_exercises : [];
     var list = lib.templates.filter(function (x) { return !libCat || x.category === libCat; });
     el.innerHTML = '<datalist id="lib-ex">' + lib.exercises.map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
@@ -640,7 +664,7 @@
 
   async function showPrograms(editId) {
     var el = openArea('#programs-area', 'Programs'); el.innerHTML = '<p class="muted">Loading…</p>';
-    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">Programs could not be loaded. Has 09-library-programs.sql been run in Supabase?</p>'; return; }
+    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">Programs could not be loaded. Has 10-library-programs.sql been run in Supabase?</p>'; return; }
     var assigned = P.must(await sb.from('program_assignments').select('program_id, client_id'));
     var p = editId ? lib.programs.find(function (x) { return x.id === editId; }) : null;
     var rowsP = p ? p.program_sessions : [];
@@ -723,6 +747,51 @@
 
   P.$('#go-team').addEventListener('click', showTeam);
 
+  // Needs attention: one line per active client with anything to act on, so the coach sees it on opening the page.
+  async function showAlerts() {
+    var el = openArea('#alerts-area', 'Needs attention'); el.innerHTML = '<p class="muted">Loading…</p>';
+    var t = P.today(), from = P.addDays(t, -27);
+    try {
+      var r = await Promise.all([
+        sb.from('wellness_entries').select('*').gte('entry_date', from),
+        sb.from('srpe_entries').select('*').gte('session_date', from),
+        sb.from('training_sessions').select('id, client_id, session_date, title, completed, client_feedback').gte('session_date', P.addDays(t, -7)).lte('session_date', P.addDays(t, 7))
+      ]);
+      var well = P.must(r[0]), load = P.must(r[1]), sess = P.must(r[2]);
+    } catch (e) { el.innerHTML = '<p class="status error">Could not load: ' + esc(e.message || e) + '</p>'; return; }
+    var red = function (x) { return '<span class="flag">' + esc(x) + '</span>'; }, yel = function (x) { return '<span class="flag warn">' + esc(x) + '</span>'; };
+    var list = clients.filter(function (c) { return c.active; }).map(function (c) {
+      var flags = [];
+      if (unread[c.id]) flags.push(red(unread[c.id] + (unread[c.id] === 1 ? ' unread message' : ' unread messages')));
+      var mine = well.filter(function (w) { return w.client_id === c.id; }).sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : 1; });
+      var last = mine[mine.length - 1];
+      if (last && last.entry_date >= P.addDays(t, -1)) {
+        P.HOOPER.forEach(function (h) { if (last[h[0]] >= 5) flags.push(red(h[1] + ' ' + last[h[0]] + ' (' + P.fmtDate(last.entry_date) + ')')); });
+        var past = mine.slice(0, -1).map(function (x) { return x.hooper; }), base = mean(past);
+        var sd = past.length > 2 ? Math.sqrt(past.reduce(function (a, v) { return a + Math.pow(v - base, 2); }, 0) / (past.length - 1)) : null;
+        if (sd != null && last.hooper > base + sd) flags.push(red('Hooper ' + last.hooper + ' above usual ' + fmt(base)));
+      } else flags.push(yel(last ? 'No wellness since ' + P.fmtDate(last.entry_date) : 'No wellness in 4 weeks'));
+      var k = P.loadMetrics(load.filter(function (l) { return l.client_id === c.id; }), t);
+      if (k.acwr != null && k.acwr > 1.5) flags.push(red('Load spike: ACWR ' + k.acwr.toFixed(2)));
+      if (k.monotony != null && k.monotony > 2) flags.push(red('Monotony ' + k.monotony.toFixed(1)));
+      var cs = sess.filter(function (s) { return s.client_id === c.id; });
+      var missed = cs.filter(function (s) { return s.session_date < t && !s.completed; });
+      if (missed.length) flags.push(red(missed.length + (missed.length === 1 ? ' missed session' : ' missed sessions') + ' (' + missed.map(function (s) { return P.fmtDate(s.session_date); }).join(', ') + ')'));
+      var fb = cs.filter(function (s) { return s.completed && s.client_feedback && s.session_date >= P.addDays(t, -2); });
+      if (fb.length) flags.push(yel('New session feedback (' + fb.map(function (s) { return P.fmtDate(s.session_date); }).join(', ') + ')'));
+      if (!cs.some(function (s) { return s.session_date >= t; })) flags.push(yel('No session planned in the next 7 days'));
+      return { c: c, flags: flags };
+    }).filter(function (x) { return x.flags.length; });
+    list.sort(function (a, b) { return b.flags.length - a.flags.length || (a.c.full_name || '').localeCompare(b.c.full_name || ''); });
+    el.innerHTML = list.length ? '<ul class="list">' + list.map(function (x) {
+      return '<li><div class="row"><button class="link-btn" data-open="' + x.c.id + '"><strong>' + esc(x.c.full_name || x.c.email) + '</strong></button><span class="muted">' + esc(x.c.sport || '') + '</span></div><div>' + x.flags.join('') + '</div></li>';
+    }).join('') + '</ul><p class="muted" style="font-size:.85rem;margin-top:.5rem">Red: unread messages, a Hooper item at 5 or more, Hooper above the client\'s usual, ACWR above 1.5, monotony above 2, a past session not marked done (last 7 days). Yellow: no wellness for 2 days, new session feedback, nothing planned in the next 7 days.</p>'
+      : '<p class="empty">All active clients are on track today.</p>';
+    P.$$('[data-open]', el).forEach(function (b) { b.addEventListener('click', function () { select(b.getAttribute('data-open')); }); });
+  }
+  P.$('#go-alerts').addEventListener('click', showAlerts);
+
   try { await loadClients(); } catch (e) { P.$('#clients').innerHTML = '<li class="status error">Clients could not be loaded.</li>'; return; }
   P.tabs(function (name) { active = name; showPanel(); });
+  showAlerts();
 })();
