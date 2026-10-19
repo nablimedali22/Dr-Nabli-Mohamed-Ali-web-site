@@ -1,4 +1,5 @@
-// Coach area: pick a client, then manage their plan, sessions, tests, notes, files and messages.
+// Coach area: pick a client, then manage their plan, program, sessions, tests, notes, files and messages.
+// The session library and programs are shared and can be assigned to any client.
 // Only an account with profiles.role = 'coach' can write; the database enforces it.
 (async function () {
   var P = Portal, esc = P.esc, sb = P.sb, me, clients = [], cur = null, unread = {};
@@ -39,6 +40,23 @@
       });
     });
   }
+  var DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];  // profiles.available_days values
+  var CATS = [['strength', 'Strength & hypertrophy'], ['speed', 'Speed & acceleration'], ['power', 'Jumping & power'],
+    ['conditioning', 'Conditioning'], ['core', 'Core & injury prevention'], ['mobility', 'Mobility & recovery']];
+  function catName(id) { var c = CATS.find(function (x) { return x[0] === id; }); return c ? c[1] : id; }
+  function catOptions(sel) { return CATS.map(function (c) { return '<option value="' + c[0] + '"' + (c[0] === sel ? ' selected' : '') + '>' + c[1] + '</option>'; }).join(''); }
+  // " → 5×100, 5×100" from what the client logged for one exercise
+  function loggedSets(e) {
+    var s = (e.set_logs || []).slice().sort(function (a, b) { return a.set_no - b.set_no; });
+    return s.length ? ' <span class="logged">→ ' + s.map(function (x) { return esc(x.reps || '–') + (x.load ? '×' + esc(x.load) : ''); }).join(', ') + '</span>' : '';
+  }
+  // Exercise names from the client's "exercises to avoid" lines that match a session's exercises.
+  function restricted(client, names) {
+    var lines = (client.restrictions || '').split(/[\n,;]/).map(function (l) { return l.trim().toLowerCase(); }).filter(function (l) { return l.length > 2; });
+    return names.filter(function (n) { var x = n.toLowerCase(); return lines.some(function (l) { return x.indexOf(l) >= 0 || l.indexOf(x) >= 0; }); });
+  }
+
   async function removeFile(path) { if (path) await sb.storage.from('client-files').remove([path]); }
 
   async function loadClients() {
@@ -53,9 +71,17 @@
     }).join('') : empty('No clients yet. See “How to add a client” below.');
     P.$$('[data-c]').forEach(function (b) { b.addEventListener('click', function () { select(b.getAttribute('data-c')); }); });
   }
+  var AREAS = ['#alerts-area', '#team-area', '#library-area', '#programs-area', '#client-area'];
+  // Shows one coach-wide area (team, library, programs) instead of a client.
+  function openArea(id, title) {
+    cur = null;
+    P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', 'false'); });
+    AREAS.forEach(function (a) { P.$(a).hidden = a !== id; });
+    P.$('#client-name').textContent = title;
+    return P.$(id);
+  }
   function select(id) {
-    P.$('#team-area').hidden = true;
-    P.$('#alerts-area').hidden = true;
+    AREAS.forEach(function (a) { P.$(a).hidden = a !== '#client-area'; });
     cur = clients.find(function (c) { return c.id === id; });
     P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', b.getAttribute('data-c') === id ? 'true' : 'false'); });
     P.$('#client-name').textContent = cur.full_name || cur.email;
@@ -68,11 +94,12 @@
   var render = {
     profile: async function (el) {
       el.innerHTML = P.profileSummary(cur) + '<form class="inline-form">' + P.profileFields(cur) +
+        '<label class="wide">Exercises to avoid in programs (coach only, one per line, checked when you assign a program)<textarea name="restrictions" rows="2" placeholder="Depth jump&#10;Overhead press">' + esc(cur.restrictions) + '</textarea></label>' +
         '<label class="check wide"><input type="checkbox" name="active"' + (cur.active ? ' checked' : '') + '> Account active (untick to pause access)</label>' +
         '<div><button class="btn btn-solid btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form>';
       onSubmit(P.$('form', el), async function (f) {
         var row = P.readProfile(f);
-        row.active = f.elements.active.checked;
+        row.restrictions = val(f, 'restrictions'); row.active = f.elements.active.checked;
         P.must(await sb.from('profiles').update(row).eq('id', cur.id));
         Object.assign(cur, row); P.$('#client-name').textContent = cur.full_name || cur.email; await loadClients();
       });
@@ -128,8 +155,64 @@
         });
       });
     },
+    program: async function (el) {
+      await loadLib();
+      var asg = await rows('program_assignments', 'start_date');
+      var sess = await rows('training_sessions', 'session_date', true, 'id, assignment_id, completed, session_date');
+      var nextMon = P.addDays(P.today(), (7 - ((new Date(P.today() + 'T00:00:00').getDay() + 6) % 7)) % 7);
+      el.innerHTML = (lib.programs.length ? '<form class="inline-form"><label class="wide">Program<select name="program" required><option value="">Choose a program…</option>' +
+        lib.programs.map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + ' (' + p.weeks + ' weeks)</option>'; }).join('') + '</select></label>' +
+        '<label>Start date<input name="start" type="date" required value="' + nextMon + '"></label>' +
+        '<div class="wide" id="assign-check"></div>' +
+        '<div><button class="btn btn-solid btn-small" type="submit">Assign program</button> <span class="status" role="status"></span></div></form>'
+        : '<p class="empty">No programs yet. Build one under Programs first.</p>') +
+        '<p class="muted" style="margin-bottom:1rem;font-size:.92rem">Assigning copies the program\'s sessions into this client\'s calendar. Later changes to the library do not change sessions already assigned.</p>' +
+        (asg.length ? '<ul class="list">' + asg.map(function (a) {
+          var mine = sess.filter(function (s) { return s.assignment_id === a.id; }), done = mine.filter(function (s) { return s.completed; }).length;
+          return '<li><div class="row"><strong>' + esc(a.program_name) + '</strong><span><span class="tag">' + done + ' / ' + mine.length + ' done</span> ' +
+            (mine.length > done ? '<button class="link-btn danger" data-unassign="' + a.id + '">Remove sessions not done yet</button>' : '') + '</span></div>' +
+            '<p class="date">' + esc(P.fmtDate(a.start_date)) + ' · ' + a.weeks + ' weeks</p></li>';
+        }).join('') + '</ul>' : empty('No program assigned yet.'));
+      var f = P.$('form', el);
+      if (f) {
+        var check = function () {
+          var p = lib.programs.find(function (x) { return String(x.id) === f.elements.program.value; });
+          P.$('#assign-check').innerHTML = p ? assignWarnings(cur, p, expand(p, f.elements.start.value)) : '';
+        };
+        f.addEventListener('change', check);
+        onSubmit(f, async function (f) {
+          var p = lib.programs.find(function (x) { return String(x.id) === f.elements.program.value; });
+          var plan = expand(p, val(f, 'start'));
+          if (!plan.length) throw new Error('This program has no sessions yet');
+          var a = P.must(await sb.from('program_assignments').insert({ client_id: cur.id, program_id: p.id, program_name: p.name, start_date: val(f, 'start'), weeks: p.weeks }).select().single());
+          var made = P.must(await sb.from('training_sessions').insert(plan.map(function (x) {
+            return { client_id: cur.id, session_date: x.date, title: x.t.name, focus: x.t.focus || catName(x.t.category) + (p.weeks > 1 ? ' · week ' + x.week : ''),
+              coach_notes: x.t.coach_notes, duration_min: x.t.duration_min, template_id: x.t.id, assignment_id: a.id };
+          })).select('id, session_date'));
+          var ex = [];
+          made.forEach(function (s) {
+            var x = plan.find(function (k) { return k.date === s.session_date; });
+            (x.t.template_exercises || []).forEach(function (e) {
+              ex.push({ session_id: s.id, client_id: cur.id, position: e.position, name: e.name, sets: e.sets, reps: e.reps, load: e.load, target_rpe: e.target_rpe, rest: e.rest, notes: e.notes, demo_url: e.demo_url });
+            });
+          });
+          if (ex.length) P.must(await sb.from('session_exercises').insert(ex));
+        });
+      }
+      P.$$('[data-unassign]', el).forEach(function (b) {
+        b.addEventListener('click', async function () {
+          if (!confirm('Remove every session of this program that the client has not completed?')) return;
+          try {
+            var id = +b.getAttribute('data-unassign');
+            P.must(await sb.from('training_sessions').delete().eq('assignment_id', id).eq('completed', false));
+            if (!sess.some(function (s) { return s.assignment_id === id && s.completed; })) P.must(await sb.from('program_assignments').delete().eq('id', id));
+            showPanel();
+          } catch (err) { alert('Could not remove: ' + (err.message || err)); }
+        });
+      });
+    },
     sessions: async function (el) {
-      var list = await rows('training_sessions', 'session_date', false, '*, session_exercises(*)');
+      var list = await rows('training_sessions', 'session_date', false, '*, session_exercises(*, set_logs(*))');
       function exRow() {
         return '<div class="ex-row"><input name="ex_name" placeholder="Exercise" aria-label="Exercise"><input name="ex_sets" type="number" min="0" placeholder="Sets" aria-label="Sets">' +
           '<input name="ex_reps" placeholder="Reps" aria-label="Reps"><input name="ex_load" placeholder="Load" aria-label="Load"><input name="ex_rpe" type="number" step="0.5" min="1" max="10" placeholder="RPE" aria-label="Target RPE">' +
@@ -148,7 +231,7 @@
           return '<li><div class="row"><span><span class="date">' + esc(P.fmtDate(s.session_date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })) + '</span> <strong>' + esc(s.title) + '</strong></span>' +
             '<span>' + (s.completed ? '<span class="tag done">Done</span> ' : '') + '<button class="link-btn danger" data-del="' + s.id + '" data-path="' + esc(s.pdf_path || '') + '">Delete</button></span></div>' +
             (s.focus ? '<p class="muted">' + esc(s.focus) + '</p>' : '') +
-            (ex.length ? '<p style="font-size:.92rem;margin-top:.3rem">' + ex.map(function (e) { return esc(e.name) + (e.sets ? ' ' + esc(e.sets) + '×' + esc(e.reps || '') : '') + (e.load ? ' @ ' + esc(e.load) : '') + (e.target_rpe ? ' RPE ' + esc(e.target_rpe) : ''); }).join(' · ') + '</p>' : '') +
+            (ex.length ? '<p style="font-size:.92rem;margin-top:.3rem">' + ex.map(function (e) { return esc(e.name) + (e.sets ? ' ' + esc(e.sets) + '×' + esc(e.reps || '') : '') + (e.load ? ' @ ' + esc(e.load) : '') + (e.target_rpe ? ' RPE ' + esc(e.target_rpe) : '') + loggedSets(e); }).join(' · ') + '</p>' : '') +
             (s.pdf_path ? '<p><a href="#" data-file="' + esc(s.pdf_path) + '">Programme PDF</a></p>' : '') +
             (s.client_rpe != null || s.client_feedback ? '<p style="margin-top:.4rem"><strong>Client:</strong> ' + (s.client_rpe != null ? 'RPE ' + esc(s.client_rpe) + '. ' : '') + esc(s.client_feedback || '') + '</p>' : '') + '</li>';
         }).join('') + '</ul>' : empty('No sessions yet.'));
@@ -315,12 +398,7 @@
   function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
   function fmt(v, d) { return v == null ? '—' : (+v).toFixed(d == null ? 1 : d); }
   async function showTeam() {
-    cur = null;
-    P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', 'false'); });
-    P.$('#client-area').hidden = true;
-    P.$('#alerts-area').hidden = true;
-    P.$('#client-name').textContent = 'Team dashboard';
-    var el = P.$('#team-area'); el.hidden = false; el.innerHTML = '<p class="muted">Loading…</p>';
+    var el = openArea('#team-area', 'Team dashboard'); el.innerHTML = '<p class="muted">Loading…</p>';
     try { await loadTeams(); } catch (e) { el.innerHTML = '<p class="status error">Teams could not be loaded. Has teams.sql been run in Supabase?</p>'; return; }
     var from = P.addDays(tf.date, -27);
     var well = P.must(await sb.from('wellness_entries').select('*').gte('entry_date', from).order('entry_date'));
@@ -430,16 +508,248 @@
       });
     });
   }
+  // ---------- Session library and programs: built once, assigned to any client ----------
+  var lib = { templates: [], programs: [], exercises: [] }, libCat = '';
+  async function loadLib() {
+    var r = await Promise.all([
+      sb.from('session_templates').select('*, template_exercises(*)').order('name'),
+      sb.from('programs').select('*, program_sessions(*)').order('name'),
+      sb.from('exercise_library').select('*').order('name')
+    ]);
+    r.forEach(function (x) { if (x.error) throw x.error; });
+    lib = { templates: r[0].data, programs: r[1].data, exercises: r[2].data };
+    lib.templates.forEach(function (t) { t.template_exercises.sort(function (a, b) { return a.position - b.position; }); });
+  }
+  function tpl(id) { return lib.templates.find(function (t) { return t.id === id; }); }
+  // Dated sessions of a program from a start date. Week-specific rows replace the "every week" rows for that week.
+  function expand(p, start) {
+    if (!start) return [];
+    var mon = P.addDays(start, -((new Date(start + 'T00:00:00').getDay() + 6) % 7)), out = [];
+    for (var w = 1; w <= p.weeks; w++) {
+      var rowsW = p.program_sessions.filter(function (r) { return r.week === w; });
+      if (!rowsW.length) rowsW = p.program_sessions.filter(function (r) { return r.week === 0; });
+      rowsW.forEach(function (r) {
+        var d = P.addDays(mon, (w - 1) * 7 + r.day_of_week), t = tpl(r.template_id);
+        if (d >= start && t) out.push({ date: d, week: w, day: r.day_of_week, t: t });
+      });
+    }
+    return out.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  }
+  function assignWarnings(c, p, plan) {
+    var av = (c.available_days || []).map(function (k) { return DAY_KEYS.indexOf(k); }).filter(function (i) { return i >= 0; }), out = [];
+    var off = Array.from(new Set(plan.filter(function (x) { return av.length && av.indexOf(x.day) < 0; }).map(function (x) { return DAYS[x.day]; })));
+    if (off.length) out.push('<span class="flag warn">Not available on ' + off.join(', ') + '</span>');
+    var names = [];
+    plan.forEach(function (x) { x.t.template_exercises.forEach(function (e) { if (names.indexOf(e.name) < 0) names.push(e.name); }); });
+    restricted(c, names).forEach(function (n) { out.push('<span class="flag">Restricted: ' + esc(n) + '</span>'); });
+    return '<p style="font-size:.92rem">' + plan.length + ' sessions, ' + (plan.length ? esc(P.fmtDate(plan[0].date)) + ' → ' + esc(P.fmtDate(plan[plan.length - 1].date)) : 'none') + '</p>' +
+      (out.length ? '<div>' + out.join('') + '</div>' : '<p class="muted" style="font-size:.92rem">No clash with availability or restrictions.</p>');
+  }
+
+  function libExRow(e) {
+    e = e || {};
+    function v(x) { return x == null ? '' : esc(x); }
+    return '<div class="ex-row"><input name="ex_name" list="lib-ex" value="' + v(e.name) + '" placeholder="Exercise" aria-label="Exercise"><input name="ex_sets" type="number" min="0" value="' + v(e.sets) + '" placeholder="Sets" aria-label="Sets">' +
+      '<input name="ex_reps" value="' + v(e.reps) + '" placeholder="Reps" aria-label="Reps"><input name="ex_load" value="' + v(e.load) + '" placeholder="Load" aria-label="Load">' +
+      '<input name="ex_rpe" type="number" step="0.5" min="1" max="10" value="' + v(e.target_rpe) + '" placeholder="RPE" aria-label="Target RPE">' +
+      '<input name="ex_rest" value="' + v(e.rest) + '" placeholder="Rest" aria-label="Rest"><input name="ex_notes" value="' + v(e.notes) + '" placeholder="Notes" aria-label="Notes"></div>';
+  }
+  function libForm(el, done) {
+    P.$$('form', el).forEach(function (f) {
+      f.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var st = P.$('.status', f), btn = P.$('button[type=submit]', f);
+        P.say(st, 'Saving…'); btn.disabled = true;
+        try { await f._save(f); done(); }
+        catch (err) { P.say(st, 'Could not save: ' + (err.message || err), true); btn.disabled = false; }
+      });
+    });
+  }
+  async function showLibrary(editId) {
+    var el = openArea('#library-area', 'Session library'); el.innerHTML = '<p class="muted">Loading…</p>';
+    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">The library could not be loaded. Has 10-library-programs.sql been run in Supabase?</p>'; return; }
+    var t = editId ? tpl(editId) : null, ex = t ? t.template_exercises : [];
+    var list = lib.templates.filter(function (x) { return !libCat || x.category === libCat; });
+    el.innerHTML = '<datalist id="lib-ex">' + lib.exercises.map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
+      '<form id="tpl-form" class="inline-form"><label class="wide">' + (t ? 'Editing session' : 'Session name') + '<input name="name" required value="' + esc(t && t.name) + '" placeholder="Acceleration 0-20 m"></label>' +
+      '<label>Objective<select name="category">' + catOptions(t && t.category) + '</select></label>' +
+      '<label>Duration (min)<input name="duration_min" type="number" min="1" max="600" value="' + esc(t && t.duration_min) + '"></label>' +
+      '<label>Focus<input name="focus" value="' + esc(t && t.focus) + '" placeholder="Max strength, 85-90%"></label>' +
+      '<label class="wide">Instructions<textarea name="coach_notes" rows="2" placeholder="Warm-up, cues, what to report">' + esc(t && t.coach_notes) + '</textarea></label>' +
+      '<div class="wide"><strong style="font-size:.9rem">Exercises</strong><div class="ex-scroll"><div class="ex-rows"><div class="ex-row ex-head" aria-hidden="true"><span>Exercise</span><span>Sets</span><span>Reps</span><span>Load</span><span>RPE</span><span>Rest</span><span>Notes</span></div>' +
+      (ex.length ? ex.map(libExRow).join('') : libExRow() + libExRow() + libExRow()) + '</div></div>' +
+      '<button type="button" class="link-btn" id="lib-add-ex" style="margin-top:.4rem">+ Add an exercise</button></div>' +
+      '<div><button class="btn btn-solid btn-small" type="submit">' + (t ? 'Save changes' : 'Add to library') + '</button> ' + (t ? '<button type="button" class="link-btn" id="lib-cancel">Cancel</button> ' : '') + '<span class="status" role="status"></span></div></form>' +
+      '<div class="chips-row"><button type="button" class="chip' + (libCat ? '' : ' on') + '" data-cat="">All (' + lib.templates.length + ')</button>' +
+      CATS.map(function (c) { return '<button type="button" class="chip' + (libCat === c[0] ? ' on' : '') + '" data-cat="' + c[0] + '">' + c[1] + ' (' + lib.templates.filter(function (x) { return x.category === c[0]; }).length + ')</button>'; }).join('') + '</div>' +
+      (list.length ? '<ul class="list">' + list.map(function (x) {
+        var used = lib.programs.filter(function (p) { return p.program_sessions.some(function (r) { return r.template_id === x.id; }); }).length;
+        return '<li class="cat-' + x.category + '"><div class="row"><span><span class="tag">' + esc(catName(x.category)) + '</span> <strong>' + esc(x.name) + '</strong></span>' +
+          '<span><button class="link-btn" data-edit="' + x.id + '">Edit</button> · <button class="link-btn" data-dup="' + x.id + '">Duplicate</button> · <button class="link-btn danger" data-del-tpl="' + x.id + '">Delete</button></span></div>' +
+          '<p class="muted" style="font-size:.9rem">' + (x.duration_min ? x.duration_min + ' min · ' : '') + x.template_exercises.length + ' exercises · ' + (used ? 'in ' + used + ' program' + (used > 1 ? 's' : '') : 'not in a program') + '</p>' +
+          '<p style="font-size:.92rem;margin-top:.3rem">' + x.template_exercises.map(function (e) { return esc(e.name) + (e.sets ? ' ' + esc(e.sets) + '×' + esc(e.reps || '') : '') + (e.load ? ' @ ' + esc(e.load) : ''); }).join(' · ') + '</p></li>';
+      }).join('') + '</ul>' : empty('No sessions in this category yet.')) +
+      '<h3>Exercise library</h3><p class="muted" style="font-size:.92rem">Exercises with a demo link show a “Watch demo” link to the client.</p>' +
+      '<form id="ex-form" class="inline-form"><label>Exercise<input name="name" required placeholder="Hip thrust"></label><label>Objective<select name="category">' + catOptions() + '</select></label>' +
+      '<label>Demo video link<input name="demo_url" type="url" placeholder="https://youtu.be/…"></label><label>Coaching cue<input name="cue" maxlength="300"></label>' +
+      '<div><button class="btn btn-solid btn-small" type="submit">Add exercise</button> <span class="status" role="status"></span></div></form>' +
+      '<div class="table-wrap"><table><thead><tr><th>Exercise</th><th>Objective</th><th>Cue</th><th>Demo</th><th></th></tr></thead><tbody>' +
+      lib.exercises.map(function (x) {
+        return '<tr><td>' + esc(x.name) + '</td><td>' + esc(catName(x.category)) + '</td><td>' + esc(x.cue) + '</td><td>' +
+          (x.demo_url ? '<a href="' + esc(x.demo_url) + '" target="_blank" rel="noopener">Watch</a> · ' : '') + '<button class="link-btn" data-demo="' + x.id + '">' + (x.demo_url ? 'Change' : 'Add link') + '</button></td>' +
+          '<td><button class="link-btn danger" data-del-ex="' + x.id + '">Delete</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+
+    P.$('#lib-add-ex').addEventListener('click', function () { P.$('.ex-rows', el).insertAdjacentHTML('beforeend', libExRow()); });
+    if (t) P.$('#lib-cancel').addEventListener('click', function () { showLibrary(); });
+    P.$('#tpl-form')._save = async function (f) {
+      var row = { name: val(f, 'name'), category: val(f, 'category'), duration_min: val(f, 'duration_min') && +val(f, 'duration_min'), focus: val(f, 'focus'), coach_notes: val(f, 'coach_notes') };
+      var exs = P.$$('.ex-row:not(.ex-head)', f).map(function (r) {
+        var g = function (n) { var v = P.$('[name=' + n + ']', r).value.trim(); return v === '' ? null : v; };
+        var known = g('ex_name') && lib.exercises.find(function (x) { return x.name.toLowerCase() === g('ex_name').toLowerCase(); });
+        return g('ex_name') && { name: g('ex_name'), sets: g('ex_sets') && +g('ex_sets'), reps: g('ex_reps'), load: g('ex_load'), target_rpe: g('ex_rpe') && +g('ex_rpe'), rest: g('ex_rest'), notes: g('ex_notes'), demo_url: known ? known.demo_url : null };
+      }).filter(Boolean).map(function (e, i) { e.position = i + 1; return e; });
+      var id;
+      if (t) { P.must(await sb.from('session_templates').update(row).eq('id', t.id)); P.must(await sb.from('template_exercises').delete().eq('template_id', t.id)); id = t.id; }
+      else id = P.must(await sb.from('session_templates').insert(row).select('id').single()).id;
+      if (exs.length) P.must(await sb.from('template_exercises').insert(exs.map(function (e) { e.template_id = id; return e; })));
+    };
+    P.$('#ex-form')._save = async function (f) {
+      P.must(await sb.from('exercise_library').insert({ name: val(f, 'name').trim(), category: val(f, 'category'), demo_url: val(f, 'demo_url'), cue: val(f, 'cue') }));
+    };
+    libForm(el, function () { showLibrary(); });
+    P.$$('[data-cat]', el).forEach(function (b) { b.addEventListener('click', function () { libCat = b.getAttribute('data-cat'); showLibrary(); }); });
+    P.$$('[data-edit]', el).forEach(function (b) { b.addEventListener('click', function () { showLibrary(+b.getAttribute('data-edit')); window.scrollTo(0, 0); }); });
+    P.$$('[data-dup]', el).forEach(function (b) {
+      b.addEventListener('click', async function () {
+        var x = tpl(+b.getAttribute('data-dup'));
+        try {
+          var id = P.must(await sb.from('session_templates').insert({ name: x.name + ' (copy)', category: x.category, duration_min: x.duration_min, focus: x.focus, coach_notes: x.coach_notes }).select('id').single()).id;
+          if (x.template_exercises.length) P.must(await sb.from('template_exercises').insert(x.template_exercises.map(function (e) {
+            return { template_id: id, position: e.position, name: e.name, sets: e.sets, reps: e.reps, load: e.load, target_rpe: e.target_rpe, rest: e.rest, notes: e.notes, demo_url: e.demo_url };
+          })));
+          showLibrary(id);
+        } catch (err) { alert('Could not duplicate: ' + (err.message || err)); }
+      });
+    });
+    P.$$('[data-del-tpl]', el).forEach(function (b) {
+      b.addEventListener('click', async function () {
+        if (!confirm('Delete this session from the library? It is also removed from programs. Sessions already assigned to clients are kept.')) return;
+        try { P.must(await sb.from('session_templates').delete().eq('id', b.getAttribute('data-del-tpl'))); showLibrary(); }
+        catch (err) { alert('Could not delete: ' + (err.message || err)); }
+      });
+    });
+    P.$$('[data-demo]', el).forEach(function (b) {
+      b.addEventListener('click', async function () {
+        var x = lib.exercises.find(function (e) { return String(e.id) === b.getAttribute('data-demo'); });
+        var url = prompt('Demo video link for ' + x.name + ' (leave empty to remove)', x.demo_url || '');
+        if (url === null) return;
+        url = url.trim() || null;
+        try {
+          P.must(await sb.from('exercise_library').update({ demo_url: url }).eq('id', x.id));
+          // keep library sessions in step; sessions already assigned keep their own copy
+          P.must(await sb.from('template_exercises').update({ demo_url: url }).ilike('name', x.name.replace(/[\\%_]/g, '\\$&')));
+          showLibrary();
+        } catch (err) { alert('Could not save the link: ' + (err.message || err)); }
+      });
+    });
+    P.$$('[data-del-ex]', el).forEach(function (b) {
+      b.addEventListener('click', async function () {
+        if (!confirm('Delete this exercise from the library? Sessions that use it keep it.')) return;
+        try { P.must(await sb.from('exercise_library').delete().eq('id', b.getAttribute('data-del-ex'))); showLibrary(); }
+        catch (err) { alert('Could not delete: ' + (err.message || err)); }
+      });
+    });
+  }
+
+  async function showPrograms(editId) {
+    var el = openArea('#programs-area', 'Programs'); el.innerHTML = '<p class="muted">Loading…</p>';
+    try { await loadLib(); } catch (e) { el.innerHTML = '<p class="status error">Programs could not be loaded. Has 10-library-programs.sql been run in Supabase?</p>'; return; }
+    var assigned = P.must(await sb.from('program_assignments').select('program_id, client_id'));
+    var p = editId ? lib.programs.find(function (x) { return x.id === editId; }) : null;
+    var rowsP = p ? p.program_sessions : [];
+    var weeksUsed = Array.from(new Set(rowsP.map(function (r) { return r.week; }))).filter(function (w) { return w > 0; }).sort(function (a, b) { return a - b; });
+    function tplOptions(sel) {
+      return '<option value="">Rest</option>' + CATS.map(function (c) {
+        var ts = lib.templates.filter(function (t) { return t.category === c[0]; });
+        return ts.length ? '<optgroup label="' + c[1] + '">' + ts.map(function (t) { return '<option value="' + t.id + '"' + (t.id === sel ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</optgroup>' : '';
+      }).join('');
+    }
+    function weekRow(w) {
+      return '<tr data-week="' + w + '"><th scope="row">' + (w ? 'Week ' + w : 'Every week') + '</th>' + DAYS.map(function (d, i) {
+        var r = rowsP.find(function (x) { return x.week === w && x.day_of_week === i; });
+        return '<td><select data-day="' + i + '" aria-label="' + (w ? 'Week ' + w : 'Every week') + ', ' + d + '">' + tplOptions(r && r.template_id) + '</select></td>';
+      }).join('') + '</tr>';
+    }
+    el.innerHTML = (lib.templates.length ? '' : '<p class="status error">Add sessions to the Session library first, then place them on days here.</p>') +
+      '<form id="prog-form" class="inline-form"><label class="wide">' + (p ? 'Editing program' : 'Program name') + '<input name="name" required value="' + esc(p && p.name) + '" placeholder="Pre-season speed block"></label>' +
+      '<label>Length (weeks)<input name="weeks" type="number" min="1" max="52" required value="' + (p ? p.weeks : 4) + '"></label>' +
+      '<label class="wide">Description<input name="description" value="' + esc(p && p.description) + '"></label>' +
+      '<div class="wide"><strong style="font-size:.9rem">Weekly schedule</strong><div class="table-wrap"><table class="week-grid"><thead><tr><th></th>' + DAYS.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      weekRow(0) + weeksUsed.map(weekRow).join('') + '</tbody></table></div>' +
+      '<p class="muted" style="font-size:.88rem;margin-top:.4rem">A week-specific row replaces “Every week” for that week only, e.g. a deload or test week. ' +
+      '<label class="inline-pick">Customise week <input id="add-week" type="number" min="1" max="52" style="width:4.5rem"></label> <button type="button" class="link-btn" id="add-week-btn">Add row</button></p></div>' +
+      '<div><button class="btn btn-solid btn-small" type="submit">' + (p ? 'Save changes' : 'Create program') + '</button> ' + (p ? '<button type="button" class="link-btn" id="prog-cancel">Cancel</button> ' : '') + '<span class="status" role="status"></span></div></form>' +
+      (lib.programs.length ? '<ul class="list">' + lib.programs.map(function (x) {
+        var every = x.program_sessions.filter(function (r) { return r.week === 0; });
+        var who = assigned.filter(function (a) { return a.program_id === x.id; }).map(function (a) { var c = clients.find(function (k) { return k.id === a.client_id; }); return c ? c.full_name || c.email : ''; }).filter(Boolean);
+        who = Array.from(new Set(who));
+        return '<li><div class="row"><strong>' + esc(x.name) + '</strong><span><button class="link-btn" data-edit-prog="' + x.id + '">Edit</button> · <button class="link-btn" data-dup-prog="' + x.id + '">Duplicate</button> · <button class="link-btn danger" data-del-prog="' + x.id + '">Delete</button></span></div>' +
+          '<p class="muted" style="font-size:.9rem">' + x.weeks + ' weeks · ' + every.length + ' sessions a week' + (who.length ? ' · assigned to ' + who.map(esc).join(', ') : '') + '</p>' +
+          (x.description ? '<p style="font-size:.92rem">' + esc(x.description) + '</p>' : '') +
+          '<div class="week-strip">' + DAYS.map(function (d, i) {
+            var r = every.find(function (k) { return k.day_of_week === i; }), t = r && tpl(r.template_id);
+            return '<span class="' + (t ? 'cat-' + t.category : 'rest') + '"><b>' + d + '</b>' + (t ? esc(t.name) : 'Rest') + '</span>';
+          }).join('') + '</div></li>';
+      }).join('') + '</ul>' : empty('No programs yet.'));
+
+    P.$('#add-week-btn').addEventListener('click', function () {
+      var w = +P.$('#add-week').value, wk = +P.$('#prog-form').elements.weeks.value;
+      if (!w || w > wk || P.$('tr[data-week="' + w + '"]', el)) return;
+      P.$('.week-grid tbody', el).insertAdjacentHTML('beforeend', weekRow(w));
+    });
+    if (p) P.$('#prog-cancel').addEventListener('click', function () { showPrograms(); });
+    P.$('#prog-form')._save = async function (f) {
+      var row = { name: val(f, 'name'), weeks: +val(f, 'weeks'), description: val(f, 'description') };
+      var cells = [];
+      P.$$('tr[data-week]', f).forEach(function (tr) {
+        var w = +tr.getAttribute('data-week');
+        if (w > row.weeks) return;
+        P.$$('select[data-day]', tr).forEach(function (s) { if (s.value) cells.push({ week: w, day_of_week: +s.getAttribute('data-day'), template_id: +s.value }); });
+      });
+      var id;
+      if (p) { P.must(await sb.from('programs').update(row).eq('id', p.id)); P.must(await sb.from('program_sessions').delete().eq('program_id', p.id)); id = p.id; }
+      else id = P.must(await sb.from('programs').insert(row).select('id').single()).id;
+      if (cells.length) P.must(await sb.from('program_sessions').insert(cells.map(function (c) { c.program_id = id; return c; })));
+    };
+    libForm(el, function () { showPrograms(); });
+    P.$$('[data-edit-prog]', el).forEach(function (b) { b.addEventListener('click', function () { showPrograms(+b.getAttribute('data-edit-prog')); window.scrollTo(0, 0); }); });
+    P.$$('[data-dup-prog]', el).forEach(function (b) {
+      b.addEventListener('click', async function () {
+        var x = lib.programs.find(function (k) { return String(k.id) === b.getAttribute('data-dup-prog'); });
+        try {
+          var id = P.must(await sb.from('programs').insert({ name: x.name + ' (copy)', weeks: x.weeks, description: x.description }).select('id').single()).id;
+          if (x.program_sessions.length) P.must(await sb.from('program_sessions').insert(x.program_sessions.map(function (r) { return { program_id: id, week: r.week, day_of_week: r.day_of_week, template_id: r.template_id }; })));
+          showPrograms(id);
+        } catch (err) { alert('Could not duplicate: ' + (err.message || err)); }
+      });
+    });
+    P.$$('[data-del-prog]', el).forEach(function (b) {
+      b.addEventListener('click', async function () {
+        if (!confirm('Delete this program? Sessions already assigned to clients are kept.')) return;
+        try { P.must(await sb.from('programs').delete().eq('id', b.getAttribute('data-del-prog'))); showPrograms(); }
+        catch (err) { alert('Could not delete: ' + (err.message || err)); }
+      });
+    });
+  }
+  P.$('#go-library').addEventListener('click', function () { showLibrary(); });
+  P.$('#go-programs').addEventListener('click', function () { showPrograms(); });
+
   P.$('#go-team').addEventListener('click', showTeam);
 
   // Needs attention: one line per active client with anything to act on, so the coach sees it on opening the page.
   async function showAlerts() {
-    cur = null;
-    P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', 'false'); });
-    P.$('#client-area').hidden = true;
-    P.$('#team-area').hidden = true;
-    P.$('#client-name').textContent = 'Needs attention';
-    var el = P.$('#alerts-area'); el.hidden = false; el.innerHTML = '<p class="muted">Loading…</p>';
+    var el = openArea('#alerts-area', 'Needs attention'); el.innerHTML = '<p class="muted">Loading…</p>';
     var t = P.today(), from = P.addDays(t, -27);
     try {
       var r = await Promise.all([
