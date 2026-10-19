@@ -55,6 +55,7 @@
   }
   function select(id) {
     P.$('#team-area').hidden = true;
+    P.$('#alerts-area').hidden = true;
     cur = clients.find(function (c) { return c.id === id; });
     P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', b.getAttribute('data-c') === id ? 'true' : 'false'); });
     P.$('#client-name').textContent = cur.full_name || cur.email;
@@ -293,6 +294,7 @@
     cur = null;
     P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', 'false'); });
     P.$('#client-area').hidden = true;
+    P.$('#alerts-area').hidden = true;
     P.$('#client-name').textContent = 'Team dashboard';
     var el = P.$('#team-area'); el.hidden = false; el.innerHTML = '<p class="muted">Loading…</p>';
     try { await loadTeams(); } catch (e) { el.innerHTML = '<p class="status error">Teams could not be loaded. Has teams.sql been run in Supabase?</p>'; return; }
@@ -406,6 +408,56 @@
   }
   P.$('#go-team').addEventListener('click', showTeam);
 
+  // Needs attention: one line per active client with anything to act on, so the coach sees it on opening the page.
+  async function showAlerts() {
+    cur = null;
+    P.$$('[data-c]').forEach(function (b) { b.setAttribute('aria-current', 'false'); });
+    P.$('#client-area').hidden = true;
+    P.$('#team-area').hidden = true;
+    P.$('#client-name').textContent = 'Needs attention';
+    var el = P.$('#alerts-area'); el.hidden = false; el.innerHTML = '<p class="muted">Loading…</p>';
+    var t = P.today(), from = P.addDays(t, -27);
+    try {
+      var r = await Promise.all([
+        sb.from('wellness_entries').select('*').gte('entry_date', from),
+        sb.from('srpe_entries').select('*').gte('session_date', from),
+        sb.from('training_sessions').select('id, client_id, session_date, title, completed, client_feedback').gte('session_date', P.addDays(t, -7)).lte('session_date', P.addDays(t, 7))
+      ]);
+      var well = P.must(r[0]), load = P.must(r[1]), sess = P.must(r[2]);
+    } catch (e) { el.innerHTML = '<p class="status error">Could not load: ' + esc(e.message || e) + '</p>'; return; }
+    var red = function (x) { return '<span class="flag">' + esc(x) + '</span>'; }, yel = function (x) { return '<span class="flag warn">' + esc(x) + '</span>'; };
+    var list = clients.filter(function (c) { return c.active; }).map(function (c) {
+      var flags = [];
+      if (unread[c.id]) flags.push(red(unread[c.id] + (unread[c.id] === 1 ? ' unread message' : ' unread messages')));
+      var mine = well.filter(function (w) { return w.client_id === c.id; }).sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : 1; });
+      var last = mine[mine.length - 1];
+      if (last && last.entry_date >= P.addDays(t, -1)) {
+        P.HOOPER.forEach(function (h) { if (last[h[0]] >= 5) flags.push(red(h[1] + ' ' + last[h[0]] + ' (' + P.fmtDate(last.entry_date) + ')')); });
+        var past = mine.slice(0, -1).map(function (x) { return x.hooper; }), base = mean(past);
+        var sd = past.length > 2 ? Math.sqrt(past.reduce(function (a, v) { return a + Math.pow(v - base, 2); }, 0) / (past.length - 1)) : null;
+        if (sd != null && last.hooper > base + sd) flags.push(red('Hooper ' + last.hooper + ' above usual ' + fmt(base)));
+      } else flags.push(yel(last ? 'No wellness since ' + P.fmtDate(last.entry_date) : 'No wellness in 4 weeks'));
+      var k = P.loadMetrics(load.filter(function (l) { return l.client_id === c.id; }), t);
+      if (k.acwr != null && k.acwr > 1.5) flags.push(red('Load spike: ACWR ' + k.acwr.toFixed(2)));
+      if (k.monotony != null && k.monotony > 2) flags.push(red('Monotony ' + k.monotony.toFixed(1)));
+      var cs = sess.filter(function (s) { return s.client_id === c.id; });
+      var missed = cs.filter(function (s) { return s.session_date < t && !s.completed; });
+      if (missed.length) flags.push(red(missed.length + (missed.length === 1 ? ' missed session' : ' missed sessions') + ' (' + missed.map(function (s) { return P.fmtDate(s.session_date); }).join(', ') + ')'));
+      var fb = cs.filter(function (s) { return s.completed && s.client_feedback && s.session_date >= P.addDays(t, -2); });
+      if (fb.length) flags.push(yel('New session feedback (' + fb.map(function (s) { return P.fmtDate(s.session_date); }).join(', ') + ')'));
+      if (!cs.some(function (s) { return s.session_date >= t; })) flags.push(yel('No session planned in the next 7 days'));
+      return { c: c, flags: flags };
+    }).filter(function (x) { return x.flags.length; });
+    list.sort(function (a, b) { return b.flags.length - a.flags.length || (a.c.full_name || '').localeCompare(b.c.full_name || ''); });
+    el.innerHTML = list.length ? '<ul class="list">' + list.map(function (x) {
+      return '<li><div class="row"><button class="link-btn" data-open="' + x.c.id + '"><strong>' + esc(x.c.full_name || x.c.email) + '</strong></button><span class="muted">' + esc(x.c.sport || '') + '</span></div><div>' + x.flags.join('') + '</div></li>';
+    }).join('') + '</ul><p class="muted" style="font-size:.85rem;margin-top:.5rem">Red: unread messages, a Hooper item at 5 or more, Hooper above the client\'s usual, ACWR above 1.5, monotony above 2, a past session not marked done (last 7 days). Yellow: no wellness for 2 days, new session feedback, nothing planned in the next 7 days.</p>'
+      : '<p class="empty">All active clients are on track today.</p>';
+    P.$$('[data-open]', el).forEach(function (b) { b.addEventListener('click', function () { select(b.getAttribute('data-open')); }); });
+  }
+  P.$('#go-alerts').addEventListener('click', showAlerts);
+
   try { await loadClients(); } catch (e) { P.$('#clients').innerHTML = '<li class="status error">Clients could not be loaded.</li>'; return; }
   P.tabs(function (name) { active = name; showPanel(); });
+  showAlerts();
 })();
