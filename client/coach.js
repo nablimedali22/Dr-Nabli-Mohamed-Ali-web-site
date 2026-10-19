@@ -78,7 +78,10 @@
       });
     },
     plan: async function (el) {
-      var plans = await rows('coaching_plans', 'start_date');
+      var plans = await rows('coaching_plans', 'start_date'), weeks = [];
+      // plan_weeks comes with 09-plan-weeks.sql: without it the plans still show, without week slots.
+      var wr = await sb.from('plan_weeks').select('*').eq('client_id', cur.id);
+      if (!wr.error) weeks = wr.data;
       el.innerHTML = '<form class="inline-form"><label class="wide">Plan title<input name="title" required placeholder="Pre-season 2026"></label>' +
         '<label>Start<input name="start_date" type="date" value="' + P.today() + '"></label><label>End<input name="end_date" type="date"></label>' +
         '<label>Phase<input name="phase" placeholder="General preparation"></label><label class="wide">Goal<input name="goal"></label>' +
@@ -91,7 +94,7 @@
             '<button class="link-btn danger" data-del="' + p.id + '">Delete</button></span></div>' +
             '<p class="date">' + esc(P.fmtDate(p.start_date)) + (p.end_date ? ' → ' + esc(P.fmtDate(p.end_date)) : '') + '</p>' +
             (p.goal ? '<p><strong>Goal:</strong> ' + esc(p.goal) + '</p>' : '') + (p.phase ? '<p><strong>Phase:</strong> ' + esc(p.phase) + '</p>' : '') +
-            (p.details ? '<p class="pre">' + esc(p.details) + '</p>' : '') + '</li>';
+            (p.details ? '<p class="pre">' + esc(p.details) + '</p>' : '') + (wr.error ? '' : P.planWeeks(p, weeks, true)) + '</li>';
         }).join('') + '</ul>' : empty('No plan yet.'));
       onSubmit(P.$('form', el), async function (f) {
         P.must(await sb.from('coaching_plans').insert({ client_id: cur.id, title: val(f, 'title'), start_date: val(f, 'start_date'), end_date: val(f, 'end_date'),
@@ -103,6 +106,27 @@
         });
       });
       onDelete(el, 'coaching_plans');
+      P.bindFileLinks(el);
+      // A week's file is uploaded as soon as it is picked; replacing one removes the old file.
+      P.$$('[data-week-up]', el).forEach(function (inp) {
+        inp.addEventListener('change', async function () {
+          var file = inp.files[0], k = inp.getAttribute('data-week-up').split(':'), old = inp.getAttribute('data-path');
+          if (!file) return;
+          try {
+            var path = await upload(file);
+            var r = await sb.from('plan_weeks').upsert({ plan_id: +k[0], client_id: cur.id, week_no: +k[1], file_name: file.name, storage_path: path }, { onConflict: 'plan_id,week_no' });
+            if (r.error) { await removeFile(path); throw r.error; }
+            await removeFile(old); showPanel();
+          } catch (err) { alert('Could not upload: ' + (err.message || err)); }
+        });
+      });
+      P.$$('[data-week-del]', el).forEach(function (b) {
+        b.addEventListener('click', async function () {
+          if (!confirm('Remove this week\'s programme?')) return;
+          try { P.must(await sb.from('plan_weeks').delete().eq('id', b.getAttribute('data-week-del'))); await removeFile(b.getAttribute('data-path')); showPanel(); }
+          catch (err) { alert('Could not remove: ' + (err.message || err)); }
+        });
+      });
     },
     sessions: async function (el) {
       var list = await rows('training_sessions', 'session_date', false, '*, session_exercises(*)');

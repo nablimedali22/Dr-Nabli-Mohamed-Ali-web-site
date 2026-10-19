@@ -410,6 +410,34 @@
     return bits.length ? '<p class="muted">' + bits.join(' · ') + '</p>' : '';
   }
 
+  // ---- Weekly programmes under a coaching plan: Week 1..N, N from the plan's dates (4 without an end date) ----
+  function planWeekRanges(plan) {
+    var start = plan.start_date || String(plan.created_at || today()).slice(0, 10), n = 4;
+    if (plan.end_date && plan.end_date >= start) n = Math.ceil((Math.round((new Date(plan.end_date + 'T00:00:00') - new Date(start + 'T00:00:00')) / 864e5) + 1) / 7);
+    var a = [];
+    for (var i = 0; i < Math.min(n, 60); i++) {
+      var s = addDays(start, i * 7), e = addDays(s, 6);
+      if (plan.end_date && e > plan.end_date) e = plan.end_date;
+      a.push({ no: i + 1, start: s, end: e });
+    }
+    return a;
+  }
+  // files: this plan's plan_weeks rows. canEdit adds the coach's upload, replace and remove buttons.
+  function planWeeks(plan, files, canEdit) {
+    var t = today(), by = {};
+    files.forEach(function (f) { if (f.plan_id === plan.id) by[f.week_no] = f; });
+    return '<div class="plan-weeks"><h4>Weekly programmes</h4><ul>' + planWeekRanges(plan).map(function (w) {
+      var f = by[w.no], now = t >= w.start && t <= w.end;
+      return '<li' + (now ? ' class="now"' : '') + '><span><strong>Week ' + w.no + ' program</strong> <span class="date">' +
+        esc(fmtDate(w.start, { day: 'numeric', month: 'short' })) + ' → ' + esc(fmtDate(w.end, { day: 'numeric', month: 'short' })) + '</span>' +
+        (now ? ' <span class="tag done">This week</span>' : '') + '</span><span>' +
+        (f ? '<a href="#" data-file="' + esc(f.storage_path) + '">' + (canEdit ? esc(f.file_name || 'Open') : 'Download') + '</a>' : '<span class="muted">' + (canEdit ? 'No file' : 'Not added yet') + '</span>') +
+        (canEdit ? ' · <label class="link-btn">' + (f ? 'Replace' : 'Upload') + '<input type="file" hidden accept=".pdf,.doc,.docx" data-week-up="' + plan.id + ':' + w.no + '"' + (f ? ' data-path="' + esc(f.storage_path) + '"' : '') + '></label>' +
+          (f ? ' · <button class="link-btn danger" data-week-del="' + f.id + '" data-path="' + esc(f.storage_path) + '">Remove</button>' : '') : '') +
+        '</span></li>';
+    }).join('') + '</ul></div>';
+  }
+
   // ---- Nutrition: shared by the coach and client pages ----
   var MEALS = opts('breakfast:Breakfast|lunch:Lunch|dinner:Dinner|snack:Snack|other:Other');
   var MOMENTS = { week_start: 'Start of week', week_end: 'End of week' };
@@ -502,7 +530,7 @@
     ready: ready, sb: sb, esc: esc, fmtDate: fmtDate, fmtDateTime: fmtDateTime, today: today,
     $: $, $$: $$, say: say, must: must, requireUser: requireUser, notConfigured: notConfigured,
     signedUrl: signedUrl, bindFileLinks: bindFileLinks, tabs: tabs, lineChart: lineChart, HOOPER: HOOPER, wellnessHistory: wellnessHistory, CR10: CR10, rpeGuide: rpeGuide, bindRpeGuide: bindRpeGuide, addDays: addDays, loadMetrics: loadMetrics, srpeHistory: srpeHistory, bindLoadViews: bindLoadViews, SESSION_TYPES: SESSION_TYPES,
-    profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary,
+    profileFields: profileFields, readProfile: readProfile, profileSummary: profileSummary, planWeekRanges: planWeekRanges, planWeeks: planWeeks,
     MEALS: MEALS, MOMENTS: MOMENTS, nutritionPlans: nutritionPlans, weightHistory: weightHistory, supplementList: supplementList,
     mealGallery: mealGallery, loadPhotos: loadPhotos, compressImage: compressImage
   };
