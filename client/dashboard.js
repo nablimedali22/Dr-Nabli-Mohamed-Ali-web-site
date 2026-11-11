@@ -10,7 +10,7 @@
     var q = function (t, sel, order, asc) { return sb.from(t).select(sel || '*').eq('client_id', uid).order(order, { ascending: !!asc }); };
     var r = await Promise.all([
       q('coaching_plans', '*', 'start_date'),
-      q('training_sessions', '*, session_exercises(*)', 'session_date', true),
+      q('training_sessions', '*, session_exercises(*, set_logs(*))', 'session_date', true),
       q('assessments', '*', 'measured_on', true),
       q('coach_notes', '*', 'note_date'),
       q('documents', '*', 'created_at'),
@@ -40,11 +40,15 @@
     return path;
   }
   function empty(t) { return '<p class="empty">' + esc(t) + '</p>'; }
+  // Exercises the coach listed under "exercises to avoid" are flagged in the session.
+  var avoid = (me.profile.restrictions || '').split(/[\n,;]/).map(function (l) { return l.trim().toLowerCase(); }).filter(function (l) { return l.length > 2; });
+  function isAvoided(name) { var x = name.toLowerCase(); return avoid.some(function (l) { return x.indexOf(l) >= 0 || l.indexOf(x) >= 0; }); }
   function exerciseTable(ex) {
     if (!ex || !ex.length) return '';
     return '<div class="table-wrap"><table><thead><tr><th>Exercise</th><th>Sets</th><th>Reps</th><th>Load</th><th>RPE</th><th>Rest</th><th>Notes</th></tr></thead><tbody>' +
       ex.map(function (e) {
-        return '<tr><td>' + esc(e.name) + '</td><td class="num">' + esc(e.sets) + '</td><td class="num">' + esc(e.reps) + '</td><td>' + esc(e.load) +
+        return '<tr><td>' + esc(e.name) + (e.demo_url ? '<br><a class="demo-link" href="' + esc(e.demo_url) + '" target="_blank" rel="noopener">▶ Watch demo</a>' : '') +
+          (isAvoided(e.name) ? '<br><span class="flag">Flagged by your coach: skip or swap</span>' : '') + '</td><td class="num">' + esc(e.sets) + '</td><td class="num">' + esc(e.reps) + '</td><td>' + esc(e.load) +
           '</td><td class="num">' + esc(e.target_rpe) + '</td><td>' + esc(e.rest) + '</td><td>' + esc(e.notes) + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -55,7 +59,7 @@
       (s.completed ? '<span class="tag done">Done</span>' : '') + '</div>' +
       '<h3 style="margin:.25rem 0">' + esc(s.title) + '</h3>' + (s.focus ? '<p class="muted">' + esc(s.focus) + '</p>' : '') +
       (s.coach_notes ? '<p class="pre" style="margin-top:.5rem">' + esc(s.coach_notes) + '</p>' : '') +
-      exerciseTable(s.session_exercises) +
+      exerciseTable(s.session_exercises) + setLog(s) +
       (s.pdf_path ? '<p style="margin-top:.75rem"><a href="#" data-file="' + esc(s.pdf_path) + '">Download the programme (PDF)</a></p>' : '') +
       '<form class="inline-form report" data-id="' + s.id + '" style="margin:1rem 0 0">' +
       '<label class="check"><input type="checkbox" name="completed"' + (s.completed ? ' checked' : '') + '> Session done</label>' +
@@ -66,7 +70,49 @@
       '<label class="wide">How did it go?<textarea name="feedback" rows="2">' + esc(s.client_feedback) + '</textarea></label>' +
       '<div><button class="btn btn-line btn-small" type="submit">Save</button> <span class="status" role="status"></span></div></form></li>';
   }
+  // Set-by-set log: reps and load for every prescribed set.
+  function setLog(s) {
+    var ex = (s.session_exercises || []).filter(function (e) { return e.sets > 0; });
+    if (!ex.length) return '';
+    return '<details class="set-log"' + (ex.some(function (e) { return (e.set_logs || []).length; }) ? ' open' : '') + '><summary>Log my sets</summary>' +
+      '<form class="set-form" data-id="' + s.id + '">' + ex.map(function (e) {
+        var rowsS = '';
+        for (var i = 1; i <= Math.min(e.sets, 20); i++) {
+          var l = (e.set_logs || []).find(function (x) { return x.set_no === i; }) || {};
+          rowsS += '<span class="sn">' + i + '</span><input data-ex="' + e.id + '" data-set="' + i + '" data-f="reps" value="' + esc(l.reps) + '" placeholder="' + esc(e.reps || 'reps') + '" aria-label="' + esc(e.name) + ' set ' + i + ' reps" maxlength="20">' +
+            '<input data-ex="' + e.id + '" data-set="' + i + '" data-f="load" value="' + esc(l.load) + '" placeholder="' + esc(e.load || 'kg') + '" aria-label="' + esc(e.name) + ' set ' + i + ' load" maxlength="20">';
+        }
+        return '<fieldset><legend>' + esc(e.name) + '</legend><div class="set-grid"><span class="h">Set</span><span class="h">Reps / time</span><span class="h">Load</span>' + rowsS + '</div></fieldset>';
+      }).join('') + '<div><button class="btn btn-line btn-small" type="submit">Save my sets</button> <span class="status" role="status"></span></div></form></details>';
+  }
+  function bindSetForms(root) {
+    P.$$('form.set-form', root).forEach(function (f) {
+      f.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var st = P.$('.status', f); P.say(st, 'Saving…');
+        var by = {};
+        P.$$('input[data-ex]', f).forEach(function (i) {
+          var k = i.getAttribute('data-ex') + '|' + i.getAttribute('data-set');
+          by[k] = by[k] || { exercise_id: +i.getAttribute('data-ex'), set_no: +i.getAttribute('data-set'), reps: null, load: null };
+          by[k][i.getAttribute('data-f')] = i.value.trim() || null;
+        });
+        var all = Object.keys(by).map(function (k) { return by[k]; });
+        var s = data.sessions.find(function (x) { return String(x.id) === f.getAttribute('data-id'); });
+        var had = [];
+        if (s) s.session_exercises.forEach(function (ex) { (ex.set_logs || []).forEach(function (l) { had.push(ex.id + '|' + l.set_no); }); });
+        var keep = all.filter(function (x) { return x.reps || x.load; });
+        var drop = all.filter(function (x) { return !x.reps && !x.load && had.indexOf(x.exercise_id + '|' + x.set_no) >= 0; });
+        try {
+          if (keep.length) P.must(await sb.from('set_logs').upsert(keep, { onConflict: 'exercise_id,set_no' }));
+          for (var i = 0; i < drop.length; i++) P.must(await sb.from('set_logs').delete().eq('exercise_id', drop[i].exercise_id).eq('set_no', drop[i].set_no));
+          if (s) s.session_exercises.forEach(function (ex) { ex.set_logs = keep.filter(function (x) { return x.exercise_id === ex.id; }); });
+          P.say(st, 'Saved');
+        } catch (err) { P.say(st, 'Could not save.', true); }
+      });
+    });
+  }
   function bindReports(root) {
+    bindSetForms(root);
     P.$$('form.report', root).forEach(function (f) {
       f.addEventListener('submit', async function (e) {
         e.preventDefault();
