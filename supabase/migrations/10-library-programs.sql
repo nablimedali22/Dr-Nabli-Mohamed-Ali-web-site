@@ -206,3 +206,6 @@ insert into public.exercise_library (name, category, cue) values
   ('Couch stretch','mobility','Squeeze the glute of the back leg.'),
   ('Foam roll quads and glutes','mobility','Slow passes, pause on tight spots.')
 on conflict (name) do nothing;
+
+-- Make the API see the new tables and links right away.
+notify pgrst, 'reload schema';
