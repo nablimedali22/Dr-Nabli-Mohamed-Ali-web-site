@@ -4,6 +4,8 @@
   var P = Portal, esc = P.esc, sb = P.sb, me, data = {};
   try { me = await P.requireUser('client'); } catch (e) { return; }
   var uid = me.user.id;
+  // Cycle tracking link only for athletes of a cycle-tracking team (the database decides).
+  sb.rpc('cycle_status').then(function (r) { if (r.data && r.data.eligible) P.$('#cycle-link').hidden = false; });
   P.$('#hello').textContent = 'Welcome, ' + ((me.profile.full_name || '').split(' ')[0] || 'athlete');
 
   async function load() {
