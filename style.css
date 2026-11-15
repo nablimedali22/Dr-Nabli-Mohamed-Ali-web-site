@@ -58,6 +58,8 @@ nav a[aria-current="page"]{border-bottom-color:var(--accent)}
 
 /* hero */
 .hero-row,.about-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2.5rem;align-items:end}
+.cover{margin:0 0 2.5rem}
+.cover img{display:block;width:100%;height:auto;border-radius:4px}
 .portrait{margin:0;width:240px}
 .portrait img{width:240px;aspect-ratio:3/4;object-fit:cover;border-radius:4px}
 .portrait figcaption{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:.5rem;letter-spacing:.04em}
