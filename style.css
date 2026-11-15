@@ -38,7 +38,7 @@ main section{padding-block:clamp(2.5rem,6vw,4.5rem)}
 .site-head{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
 .head-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem 2rem;padding-block:.85rem}
 .brand{display:flex;align-items:center;gap:.7rem;text-decoration:none;color:var(--ink)}
-.brand-mark{width:40px;height:40px;flex:none}
+.brand-mark{width:60px;height:40px;flex:none}
 .brand-text{display:flex;flex-direction:column}
 .brand-name{font-family:var(--display);font-weight:700;font-size:1.35rem;line-height:1}
 .brand-role{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:.25rem}
@@ -58,6 +58,8 @@ nav a[aria-current="page"]{border-bottom-color:var(--accent)}
 
 /* hero */
 .hero-row,.about-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2.5rem;align-items:end}
+.cover{margin:0 0 2.5rem}
+.cover img{display:block;width:100%;height:auto;border-radius:4px}
 .portrait{margin:0;width:240px}
 .portrait img{width:240px;aspect-ratio:3/4;object-fit:cover;border-radius:4px}
 .portrait figcaption{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:.5rem;letter-spacing:.04em}
