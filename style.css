@@ -58,9 +58,10 @@ nav a[aria-current="page"]{border-bottom-color:var(--accent)}
 
 /* hero */
 .hero-row,.about-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2.5rem;align-items:end}
-.cover{margin:0 0 1.75rem}
-.cover img{display:block;width:100%;height:auto;max-height:clamp(200px,35vh,420px);object-fit:cover;object-position:50% 16%;border-radius:4px}
-@media (max-width:640px){.cover img{max-height:230px;object-position:50% 25%}}
+.cover-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:2.5rem;align-items:center}
+.cover{margin:0}
+.cover img{display:block;width:100%;height:auto;border-radius:4px}
+@media (max-width:860px){.cover-row{grid-template-columns:1fr;gap:1.5rem}.cover{order:-1}}
 .portrait{margin:0;width:240px}
 .portrait img{width:240px;aspect-ratio:3/4;object-fit:cover;border-radius:4px}
 .portrait figcaption{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:.5rem;letter-spacing:.04em}
